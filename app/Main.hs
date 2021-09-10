@@ -143,11 +143,11 @@ execute cpu = case fetch cpu of
   }
   -- 5XYN Skip if Vx == Vy
   (0x5, x, y, 0x0) -> cpu {
-    pc = pc cpu + skipIf (registers cpu `at` x == registers cpu `at`)
+    pc = pc cpu + skipIf (registers cpu `at` x == registers cpu `at` y)
   }
   -- 5XYN Skip if Vx == Vy
   (0x9, x, y, 0x0) -> cpu {
-    pc = pc cpu + skipIf (registers cpu `at` x /= registers cpu `at y`)
+    pc = pc cpu + skipIf (registers cpu `at` x /= registers cpu `at` y)
   }
 
   -- UN-RECOGNIZED OPCODE
@@ -161,5 +161,5 @@ main = do
   print $ fetch chip8
   print $ word16FromNibbles 0xf 0xf 0xf
   print 0x0fff
-  print $ pc $ execute (0x1, 0x1, 0x1, 0x1) chip8
-  print $ pc $ execute (0xB, 0x1, 0x1, 0x1) chip8 { registers = registers chip8 // [(0,0xFF)] }
+  print $ pc $ execute chip8
+  print $ pc $ execute (chip8 { registers = registers chip8 // [(0,0xFF)] })
