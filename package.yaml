@@ -1,0 +1,44 @@
+name:                chip8
+version:             0.1.0.0
+github:              "stevekane/chip8"
+license:             BSD3
+author:              "Steve Kane"
+maintainer:          "kanesteven@gmail.com"
+copyright:           "2021 Steven Kane"
+
+extra-source-files:
+- README.md
+- ChangeLog.md
+
+description:         Please see the README on GitHub at <https://github.com/githubuser/chip8#readme>
+
+dependencies:
+- base >= 4.7 && < 5
+- bytestring
+- array
+- lens
+
+library:
+  source-dirs: src
+
+executables:
+  chip8-exe:
+    main:                Main.hs
+    source-dirs:         app
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - chip8
+
+tests:
+  chip8-test:
+    main:                Spec.hs
+    source-dirs:         test
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - chip8
