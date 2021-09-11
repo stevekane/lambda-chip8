@@ -30,28 +30,6 @@ data Chip8 = Chip8 {
   ram        :: Array RAMAddress Word8         -- 4096 bytes indexed by word16
 } deriving (Show)
 
-data OpCode
-  -- display
-  = Clear                                             -- 00E0
-  | DrawVxVyN RegisterAddress RegisterAddress Word8   -- DXYN
-  -- i operations
-  | SetIToNNN RAMAddress                              -- ANNN
-  | SetIToIPlusVx RegisterAddress                     -- FX1E
-  | SetIToSpriteAddressVx RegisterAddress             -- FX29
-  | StoreBCDVxAtI RegisterAddress                     -- FX33
-  -- memory / register operations
-  | DumpRegisters RegisterAddress                     -- FX55
-  | LoadRegisters RegisterAddress                     -- FX65
-  -- timers
-  | SetVxToD RegisterAddress                          -- FX07
-  | SetDToVx RegisterAddress                          -- FX15
-  | SetSToVx RegisterAddress                          -- FX18
-  -- input 
-  | SkipIfKeyDownVx RegisterAddress                   -- EX9E
-  | SkipUnlessKeyDownVx RegisterAddress               -- EXA1
-  | BlockUnlessKeyDownVx RegisterAddress              -- FX0A
-  deriving (Show)
-
 off = False
 on = True
 
@@ -87,12 +65,12 @@ msb b = if nthbit 7 b then 1 else 0
 
 callSubroutineAtNNN nnn cpu = cpu { 
   pc = nnn, 
-  sp = sp s + 1,
-  stack = stack cpu // [(pc cpu,nnn)]
+  sp = sp cpu + 1,
+  stack = stack cpu // [(sp cpu,pc cpu)]
 }
 returnFromSubroutine cpu = cpu { 
   pc = stack cpu ! sp cpu,
-  sp = sp s - 1
+  sp = sp cpu - 1
 }
 jumpToNNN nnn cpu = cpu { 
   pc = nnn 
@@ -170,6 +148,7 @@ execute cpu =
       v0 = registers cpu ! 0x0
       nnn = word16FromNibbles x y z
       nn = word8FromNibbles y z
+      n = z
   in  case (a,x,y,z) of
     (0x2, _, _, _)       -> callSubroutineAtNNN nnn cpu
     (0x0, 0x0, 0xE, 0xE) -> returnFromSubroutine cpu
@@ -191,6 +170,20 @@ execute cpu =
     (0x8, x, y, 0x6)     -> leftShiftVxAndStoreLSBVx x vx cpu
     (0x8, x, y, 0xE)     -> rightShiftVxAndStoreMSBVx x vx cpu
     (0xC, x, _, _)       -> setVxToRandAndNN x nn cpu
+    -- (0x0,0x0,0xE,0x0)    -> clear cpu
+    -- (0xD, _, _, _)       -> draw vx vy n cpu
+    -- (0xA, _, _, _)       -> setIToNNN nnn cpu
+    -- (0xF, _, 0x1, 0xE)   -> setIToIPlusVx x vx cpu
+    -- (0xF, _, 0x2, 0x9)   -> setIToISpriteAddressVx x vx cpu
+    -- (0xF, _, 0x3, 0x3)   -> storeBCDVxAtI vx cpu
+    -- (0xF, _, 0x5, 0x5)   -> dumpRegistersV0ToVxToI x cpu
+    -- (0xF, _, 0x6, 0x5)   -> loadRegistersV0ToVxFromI x cpu
+    -- (0xF, _, 0x0, 0x7)   -> setVxToD x cpu
+    -- (0xF, _, 0x1, 0x5)   -> setDToVx vx cpu
+    -- (0xF, _, 0x1, 0x8)   -> setSToVx vx cpu
+    -- (0xE, _, 0x9, 0xE)   -> skipIfKeyDownVx vx cpu
+    -- (0xE, _, 0xA, 0x1)   -> skipUnlessKeyDownVx vx cpu
+    -- (0xF, _, 0x0, 0xA)   -> blockUnlessKeyDownVx vx cpu
     _ -> cpu
 
 
