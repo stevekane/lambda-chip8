@@ -1,5 +1,3 @@
-{-# LANGUAGE BinaryLiterals #-}
-
 module Main where
 
 import Data.Bits (shiftL, shiftR, (.&.), (.|.), xor)
@@ -32,36 +30,13 @@ data Chip8 = Chip8 {
 
 off = False
 on = True
-
-initialize (min,max) v0 = array (min,max) [(i,v0) | i <- [min..max]]
-
-load :: StdGen -> () -> Chip8
-load randomSeed program = Chip8 {
-  randomSeed = randomSeed,
-  inputs = initialize (0,15) off,
-  display = initialize (0,64 * 32 - 1) off,
-  d = 0,
-  s = 0,
-  registers = initialize (0,15) 0, 
-  sp = 0, 
-  stack = initialize (0,15) 0,
-  pc = 512,
-  i = 0,
-  ram = initialize (0,4095) 0
-}
-
-fetch :: Chip8 -> (Word8, Word8, Word8, Word8)
-fetch c8 = 
-  let b0 = ram c8 ! pc c8
-      b1 = ram c8 ! (pc c8 + 1)
-  in  (highNibble b0, lowNibble b0, highNibble b1, lowNibble b1)
-
 step pc = pc + 2
 skipIf b = if b then 4 else 2
 carry a b = if (word16 a + word16 b) > 255 then 1 else 0
 borrow a b = if a > b then 0 else 1
 lsb b = if nthbit 0 b then 1 else 0
 msb b = if nthbit 7 b then 1 else 0
+initialize (min,max) v0 = array (min,max) [(i,v0) | i <- [min..max]]
 
 callSubroutineAtNNN nnn cpu = cpu { 
   pc = nnn, 
@@ -115,30 +90,92 @@ setVxToVxXorVy x vx vy cpu = cpu {
   registers = registers cpu // [(x,vx `xor` vy)] 
 }
 setVxToVxPlusVy x vx vy cpu = cpu {
-  pc = step(pc cpu),
-  registers = registers cpu // [(x, vx + vy), (0xF, carry vx vy)]
+  pc = step (pc cpu),
+  registers = registers cpu // [(x,vx + vy), (0xF,carry vx vy)]
 }
 setVxToVxMinusVy x vx vy cpu = cpu {
-  pc = step(pc cpu + 2),
-  registers = registers cpu // [(x, vx - vy), (0xF, borrow vx vy)]
+  pc = step (pc cpu),
+  registers = registers cpu // [(x,vx - vy), (0xF,borrow vx vy)]
 }
 setVxToVyMinusVx x vx vy cpu = cpu {
-  pc = pc cpu + 2,
-  registers = registers cpu // [(x, vy - vx), (0xF, borrow vy vx)]
+  pc = step (pc cpu),
+  registers = registers cpu // [(x,vy - vx), (0xF,borrow vy vx)]
 }
 leftShiftVxAndStoreLSBVx x vx cpu = cpu {
-  pc = pc cpu + 2,
-  registers = registers cpu // [(x, vx `shiftR` 1), (0xF, lsb vx)]
+  pc = step (pc cpu),
+  registers = registers cpu // [(x,vx `shiftR` 1), (0xF,lsb vx)]
 }
 rightShiftVxAndStoreMSBVx x vx cpu = cpu {
-  pc = pc cpu + 2,
-  registers = registers cpu // [(x, vx `shiftL` 1), (0xF, msb vx)]
+  pc = step (pc cpu),
+  registers = registers cpu // [(x,vx `shiftL` 1), (0xF,msb vx)]
 }
 setVxToRandAndNN x nn cpu = cpu {
-  pc = pc cpu + 2,
-  registers = registers cpu // [(x, randValue .&. nn)],
+  pc = step (pc cpu),
+  registers = registers cpu // [(x,randValue .&. nn)],
   randomSeed = randomSeed'
 } where (randValue, randomSeed') = genWord8 (randomSeed cpu)
+setIToNNN nnn cpu = cpu {
+  pc = step (pc cpu),
+  i = nnn
+}
+setIToIPlusVx vx cpu = cpu {
+  pc = step (pc cpu),
+  i = i cpu + word16 vx
+}
+setIToISpriteAddressVx vx cpu = cpu {
+  pc = step (pc cpu),
+  i = word16 vx * fontHeight
+} where fontHeight = 5
+dumpRegistersV0ToVxToI x cpu = cpu {
+  pc = step (pc cpu),
+  ram = ram cpu // [(i cpu + word16 offset,registers cpu ! offset) | offset <- [0..x]]
+}
+loadRegistersV0ToVxFromI x cpu = cpu {
+  pc = step (pc cpu),
+  registers = registers cpu // [(offset,ram cpu ! (i cpu + word16 offset)) | offset <- [0..x]]
+}
+setVxToD x cpu = cpu {
+  pc = step (pc cpu),
+  registers = registers cpu // [(x,d cpu)]
+}
+setDToVx vx cpu = cpu {
+  pc = step (pc cpu),
+  d = vx
+}
+setSToVx vx cpu = cpu {
+  pc = step (pc cpu),
+  s = vx
+}
+skipIfKeyDownVx vx cpu = cpu {
+  pc = pc cpu + skipIf (inputs cpu ! vx) 
+}
+skipUnlessKeyDownVx vx cpu = cpu {
+  pc = pc cpu + skipIf (not (inputs cpu ! vx))
+}
+blockUnlessKeyDownVx vx cpu = cpu {
+  pc = if inputs cpu ! vx then pc cpu else step (pc cpu)
+}
+
+load :: StdGen -> () -> Chip8
+load randomSeed program = Chip8 {
+  randomSeed = randomSeed,
+  inputs = initialize (0,15) off,
+  display = initialize (0,64 * 32 - 1) off,
+  registers = initialize (0,15) 0, 
+  stack = initialize (0,15) 0,
+  ram = initialize (0,4095) 0,
+  pc = 512,
+  sp = 0, 
+  d = 0,
+  s = 0,
+  i = 0
+}
+
+fetch :: Chip8 -> (Word8, Word8, Word8, Word8)
+fetch c8 = 
+  let b0 = ram c8 ! pc c8
+      b1 = ram c8 ! (pc c8 + 1)
+  in  (highNibble b0, lowNibble b0, highNibble b1, lowNibble b1)
 
 execute :: Chip8 -> Chip8
 execute cpu = 
@@ -172,20 +209,19 @@ execute cpu =
     (0xC, x, _, _)       -> setVxToRandAndNN x nn cpu
     -- (0x0,0x0,0xE,0x0)    -> clear cpu
     -- (0xD, _, _, _)       -> draw vx vy n cpu
-    -- (0xA, _, _, _)       -> setIToNNN nnn cpu
-    -- (0xF, _, 0x1, 0xE)   -> setIToIPlusVx x vx cpu
-    -- (0xF, _, 0x2, 0x9)   -> setIToISpriteAddressVx x vx cpu
+    (0xA, _, _, _)       -> setIToNNN nnn cpu
+    (0xF, _, 0x1, 0xE)   -> setIToIPlusVx vx cpu
+    (0xF, _, 0x2, 0x9)   -> setIToISpriteAddressVx vx cpu
     -- (0xF, _, 0x3, 0x3)   -> storeBCDVxAtI vx cpu
-    -- (0xF, _, 0x5, 0x5)   -> dumpRegistersV0ToVxToI x cpu
-    -- (0xF, _, 0x6, 0x5)   -> loadRegistersV0ToVxFromI x cpu
-    -- (0xF, _, 0x0, 0x7)   -> setVxToD x cpu
-    -- (0xF, _, 0x1, 0x5)   -> setDToVx vx cpu
-    -- (0xF, _, 0x1, 0x8)   -> setSToVx vx cpu
-    -- (0xE, _, 0x9, 0xE)   -> skipIfKeyDownVx vx cpu
-    -- (0xE, _, 0xA, 0x1)   -> skipUnlessKeyDownVx vx cpu
-    -- (0xF, _, 0x0, 0xA)   -> blockUnlessKeyDownVx vx cpu
+    (0xF, _, 0x5, 0x5)   -> dumpRegistersV0ToVxToI x cpu
+    (0xF, _, 0x6, 0x5)   -> loadRegistersV0ToVxFromI x cpu
+    (0xF, _, 0x0, 0x7)   -> setVxToD x cpu
+    (0xF, _, 0x1, 0x5)   -> setDToVx vx cpu
+    (0xF, _, 0x1, 0x8)   -> setSToVx vx cpu
+    (0xE, _, 0x9, 0xE)   -> skipIfKeyDownVx vx cpu
+    (0xE, _, 0xA, 0x1)   -> skipUnlessKeyDownVx vx cpu
+    (0xF, _, 0x0, 0xA)   -> blockUnlessKeyDownVx vx cpu
     _ -> cpu
-
 
 rndSeed = mkStdGen 10
 chip8 = load rndSeed ()
@@ -193,7 +229,3 @@ chip8 = load rndSeed ()
 main :: IO ()
 main = do
   print $ fetch chip8
-  print $ word16FromNibbles 0xf 0xf 0xf
-  print 0x0fff
-  print $ pc $ execute chip8
-  -- print $ pc $ registers (chip8 { registers = registers chip8 `setting` [(0,0xFF)] }) `at` 0
