@@ -17,6 +17,7 @@ dependencies:
 - bytestring
 - array
 - lens
+- random
 
 library:
   source-dirs: src
