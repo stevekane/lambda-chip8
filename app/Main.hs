@@ -13,6 +13,8 @@ type DisplayAddress = Word32
 type Pixel = Bool
 type InputState = Bool
 type Registers = Array RegisterAddress Word8
+type Nibbles = (Word8, Word8, Word8, Word8)
+type OpCode = (Word8, Word8, Word8, Word8, Word8, Word16)
 
 data Chip8 = Chip8 {
   randomSeed :: StdGen,
@@ -171,22 +173,28 @@ load randomSeed program = Chip8 {
   i = 0
 }
 
-fetch :: Chip8 -> (Word8, Word8, Word8, Word8)
-fetch c8 = 
-  let b0 = ram c8 ! pc c8
-      b1 = ram c8 ! (pc c8 + 1)
+fetch :: Chip8 -> Nibbles
+fetch cpu = 
+  let b0 = ram cpu ! pc cpu
+      b1 = ram cpu ! (pc cpu + 1)
   in  (highNibble b0, lowNibble b0, highNibble b1, lowNibble b1)
 
-execute :: Chip8 -> Chip8
-execute cpu = 
-  let (a,x,y,z) = fetch cpu
-      vx = registers cpu ! x
+decode :: Nibbles -> Chip8 -> OpCode
+decode (_,x,y,z) cpu =
+  let vx = registers cpu ! x
       vy = registers cpu ! y
       v0 = registers cpu ! 0x0
       nnn = word16FromNibbles x y z
       nn = word8FromNibbles y z
       n = z
-  in  case (a,x,y,z) of
+  in  (vx, vy, v0, n, nn, nnn)
+  
+
+execute :: Chip8 -> Chip8
+execute cpu = 
+  let nibbles = fetch cpu
+      (vx,vy,v0,n,nn,nnn) = decode nibbles cpu
+  in  case nibbles of
     (0x2, _, _, _)       -> callSubroutineAtNNN nnn cpu
     (0x0, 0x0, 0xE, 0xE) -> returnFromSubroutine cpu
     (0x1, _, _, _)       -> jumpToNNN nnn cpu
@@ -213,9 +221,9 @@ execute cpu =
     (0xF, _, 0x1, 0xE)   -> setIToIPlusVx vx cpu
     (0xF, _, 0x2, 0x9)   -> setIToISpriteAddressVx vx cpu
     -- (0xF, _, 0x3, 0x3)   -> storeBCDVxAtI vx cpu
-    (0xF, _, 0x5, 0x5)   -> dumpRegistersV0ToVxToI x cpu
-    (0xF, _, 0x6, 0x5)   -> loadRegistersV0ToVxFromI x cpu
-    (0xF, _, 0x0, 0x7)   -> setVxToD x cpu
+    (0xF, x, 0x5, 0x5)   -> dumpRegistersV0ToVxToI x cpu
+    (0xF, x, 0x6, 0x5)   -> loadRegistersV0ToVxFromI x cpu
+    (0xF, x, 0x0, 0x7)   -> setVxToD x cpu
     (0xF, _, 0x1, 0x5)   -> setDToVx vx cpu
     (0xF, _, 0x1, 0x8)   -> setSToVx vx cpu
     (0xE, _, 0x9, 0xE)   -> skipIfKeyDownVx vx cpu
