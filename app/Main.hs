@@ -15,11 +15,11 @@ type Pixel = Bool
 type InputState = Bool
 type Registers = Array RegisterAddress Word8
 type Nibbles = (Word8, Word8, Word8, Word8)
-type OpCode = (Word8, Word8, Word8, Word8, Word8, Word16)
+type OpCode = (Word8, Word8, Word8, Word8, Word8, Word8, Word16)
 
 -- Model for Chip8 CPU
 data Chip8 = Chip8 {
-  randomSeed :: StdGen,
+  randomSeed :: StdGen,                        -- seeded generator for pseudo-random bytes
   display    :: Array DisplayAddress Pixel,    -- 64 × 32 booleans indexed by a 32-bit Word
   inputs     :: Array Word8 InputState,        -- 16 booleans
   d          :: Word8,                         -- byte delay timer
@@ -31,6 +31,19 @@ data Chip8 = Chip8 {
   stack      :: Array StackAddress RAMAddress, -- 16 2-byte adresses
   ram        :: Array RAMAddress Word8         -- 4096 bytes indexed by word16
 } deriving (Show)
+
+{-
+Think about the actual API here... what are fetch decode and execute really?
+
+It doesn't seem like the thing I am calling an OpCode really is one... it's just
+a bag of commonly-used variables extracted from registers or assembled from nibbles.
+
+* Clean this up and start adding tests for all the key operations.
+* Implement drawing algorithm
+* Add built-on font data as binary loaded into RAM
+* Read binary data from file and load into RAM as program at 512
+* Implement simple console renderer to test IBM logo and other similar programs
+-}
 
 -- Constants
 instructionByteWidth = 2
@@ -128,12 +141,12 @@ setVxToVxPlusVy x vx vy cpu = cpu {
 
 setVxToVxMinusVy x vx vy cpu = cpu {
   pc = step (pc cpu),
-  registers = registers cpu // [(x,difference), (0xF,toWord8 borrow)]
+  registers = registers cpu // [(x,difference), (0xF,toWord8 (not borrow))]
 } where (difference, borrow) = vx `subtractWithBorrow` vy
 
 setVxToVyMinusVx x vx vy cpu = cpu {
   pc = step (pc cpu),
-  registers = registers cpu // [(x,difference), (0xF,toWord8 borrow)]
+  registers = registers cpu // [(x,difference), (0xF,toWord8 (not borrow))]
 } where (difference, borrow) = vy `subtractWithBorrow` vx
 
 rightShiftVxAndStoreLSBVx x vx cpu = cpu {
@@ -156,6 +169,30 @@ clearDisplay cpu = cpu {
   pc = step (pc cpu),
   display = blankDisplay
 }
+
+-- Fuck this function. This is so complex and ugly.
+drawSpriteAtIToVxVyNHigh vx vy n cpu = cpu {
+  pc = step (pc cpu),
+  display = display cpu // pixels,
+  registers = registers cpu // [(0xF,toWord8 collisionFlag)]
+} where
+    x = word32 vx `mod` displayWidth
+    y = word32 vy `mod` displayHeight
+    xMax = max (x + 8) displayWidth - 1
+    yMax = max (y + word32 n) displayHeight - 1
+    iMax = xMax - x
+    jMax = yMax - y
+    offsets = [0..iMax] × [0..jMax]
+    ramIndex = i cpu
+    (pixels,collisionFlag) = foldr pixelWrite ([],False) offsets
+    pixelWrite (i,j) (pixels,collisionFlag) = (pixels',collisionFlag')
+      where
+        displayIndex = to1DIndex displayWidth (x + i, y + j)
+        displayValue = display cpu ! displayIndex
+        spriteWord = ram cpu ! (ramIndex + word16 j)
+        spriteValue = nthbit i spriteWord
+        pixels' = (displayIndex,spriteValue) : pixels
+        collisionFlag' = collisionFlag || (spriteValue `xor` displayValue)
 
 setIToNNN nnn cpu = cpu {
   pc = step (pc cpu),
@@ -232,63 +269,64 @@ load randomSeed program = Chip8 {
 
 -- fetch two bytes from cpu at current pc and split into 4 nibbles
 fetch :: Chip8 -> Nibbles
-fetch cpu = 
-  let b0 = ram cpu ! pc cpu
-      b1 = ram cpu ! (pc cpu + 1)
-  in  (highNibble b0, lowNibble b0, highNibble b1, lowNibble b1)
+fetch cpu = (highNibble b0, lowNibble b0, highNibble b1, lowNibble b1)
+  where 
+    b0 = ram cpu ! pc cpu
+    b1 = ram cpu ! (pc cpu + 1)
 
 -- extract commonly-used values from cpu registers and instruction nibbles
 decode :: Nibbles -> Chip8 -> OpCode
-decode (_,x,y,z) cpu =
-  let vx = registers cpu ! x
-      vy = registers cpu ! y
-      v0 = registers cpu ! 0x0
-      nnn = word16FromNibbles x y z
-      nn = word8FromNibbles y z
-      n = z
-  in  (vx, vy, v0, n, nn, nnn)
+decode (_,x,y,z) cpu = (x,vx,vy,v0,n,nn,nnn)
+  where
+    x = x
+    vx = registers cpu ! x
+    vy = registers cpu ! y
+    v0 = registers cpu ! 0x0
+    nnn = word16FromNibbles x y z
+    nn = word8FromNibbles y z
+    n = z
   
 -- fetch, decode and execute the next opcode
 execute :: Chip8 -> Chip8
 execute cpu = 
   let nibbles = fetch cpu
-      (vx,vy,v0,n,nn,nnn) = decode nibbles cpu
+      (x,vx,vy,v0,n,nn,nnn) = decode nibbles cpu
   in  case nibbles of
     (0x2, _, _, _)       -> callSubroutineAtNNN nnn cpu
     (0x0, 0x0, 0xE, 0xE) -> returnFromSubroutine cpu
     (0x1, _, _, _)       -> jumpToNNN nnn cpu
     (0xB, _, _, _)       -> jumpToV0PlusNNN v0 nnn cpu
-    (0x3, x, _, _)       -> skipIfVxIsNN vx nn cpu
-    (0x4, x, _, _)       -> skipUnlessVxIsNN vx nn cpu
-    (0x5, x, y, 0x0)     -> skipIfVxIsVy vx vy cpu
-    (0x9, x, y, 0x0)     -> skipUnlessVxIsVy vx vy cpu
-    (0x6, x, _, _)       -> setVxToNN x vx nn cpu
-    (0x7, x, _, _)       -> setVxToVxPlusNN x vx nn cpu
-    (0x8, x, y, 0x0)     -> setVxToVy x vx vy cpu
-    (0x8, x, y, 0x1)     -> setVxToVxOrVy x vx vy cpu
-    (0x8, x, y, 0x2)     -> setVxToVxAndVy x vx vy cpu
-    (0x8, x, y, 0x3)     -> setVxToVxXorVy x vx vy cpu
-    (0x8, x, y, 0x4)     -> setVxToVxPlusVy x vx vy cpu
-    (0x8, x, y, 0x5)     -> setVxToVxMinusVy x vx vy cpu
-    (0x8, x, y, 0x7)     -> setVxToVyMinusVx x vx vy cpu
-    (0x8, x, y, 0x6)     -> rightShiftVxAndStoreLSBVx x vx cpu
-    (0x8, x, y, 0xE)     -> leftShiftVxAndStoreMSBVx x vx cpu
-    (0xC, x, _, _)       -> setVxToRandAndNN x nn cpu
+    (0x3, _, _, _)       -> skipIfVxIsNN vx nn cpu
+    (0x4, _, _, _)       -> skipUnlessVxIsNN vx nn cpu
+    (0x5, _, _, 0x0)     -> skipIfVxIsVy vx vy cpu
+    (0x9, _, _, 0x0)     -> skipUnlessVxIsVy vx vy cpu
+    (0x6, _, _, _)       -> setVxToNN x vx nn cpu
+    (0x7, _, _, _)       -> setVxToVxPlusNN x vx nn cpu
+    (0x8, _, _, 0x0)     -> setVxToVy x vx vy cpu
+    (0x8, _, _, 0x1)     -> setVxToVxOrVy x vx vy cpu
+    (0x8, _, _, 0x2)     -> setVxToVxAndVy x vx vy cpu
+    (0x8, _, _, 0x3)     -> setVxToVxXorVy x vx vy cpu
+    (0x8, _, _, 0x4)     -> setVxToVxPlusVy x vx vy cpu
+    (0x8, _, _, 0x5)     -> setVxToVxMinusVy x vx vy cpu
+    (0x8, _, _, 0x7)     -> setVxToVyMinusVx x vx vy cpu
+    (0x8, _, _, 0x6)     -> rightShiftVxAndStoreLSBVx x vx cpu
+    (0x8, _, _, 0xE)     -> leftShiftVxAndStoreMSBVx x vx cpu
+    (0xC, _, _, _)       -> setVxToRandAndNN x nn cpu
     (0x0,0x0,0xE,0x0)    -> clearDisplay cpu
-    -- (0xD, _, _, _)       -> draw vx vy n cpu
+    (0xD, _, _, _)       -> drawSpriteAtIToVxVyNHigh vx vy n cpu
     (0xA, _, _, _)       -> setIToNNN nnn cpu
     (0xF, _, 0x1, 0xE)   -> setIToIPlusVx vx cpu
     (0xF, _, 0x2, 0x9)   -> setIToISpriteAddressVx vx cpu
     (0xF, _, 0x3, 0x3)   -> storeBCDVxAtI vx cpu
-    (0xF, x, 0x5, 0x5)   -> dumpRegistersV0ToVxToI x cpu
-    (0xF, x, 0x6, 0x5)   -> loadRegistersV0ToVxFromI x cpu
-    (0xF, x, 0x0, 0x7)   -> setVxToD x cpu
+    (0xF, _, 0x5, 0x5)   -> dumpRegistersV0ToVxToI x cpu
+    (0xF, _, 0x6, 0x5)   -> loadRegistersV0ToVxFromI x cpu
+    (0xF, _, 0x0, 0x7)   -> setVxToD x cpu
     (0xF, _, 0x1, 0x5)   -> setDToVx vx cpu
     (0xF, _, 0x1, 0x8)   -> setSToVx vx cpu
     (0xE, _, 0x9, 0xE)   -> skipIfKeyDownVx vx cpu
     (0xE, _, 0xA, 0x1)   -> skipUnlessKeyDownVx vx cpu
     (0xF, _, 0x0, 0xA)   -> blockUnlessKeyDownVx vx cpu
-    _ -> cpu
+    _                    -> cpu
 
 rndSeed = mkStdGen 10
 chip8 = load rndSeed ()

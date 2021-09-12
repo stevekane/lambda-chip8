@@ -1,6 +1,6 @@
 module Lib where
 
-import Data.Word (Word8, Word16)
+import Data.Word (Word8, Word16, Word32)
 import Data.Bits 
 
 toWord8 :: Bool -> Word8
@@ -20,14 +20,17 @@ highNibble b = (b .&. 0xF0) `shiftR` 4
 lowNibble :: Word8 -> Word8 -- no available Word4 type
 lowNibble b = b .&. 0x0F
 
-nthbit :: Int -> Word8 -> Bool
-nthbit n b = (b .&. (1 `shiftL` n)) > 0
+nthbit :: Integral i => i -> Word8 -> Bool
+nthbit n b = (b .&. (1 `shiftL` fromIntegral n)) > 0
 
 word8 :: Integral a => a -> Word8
 word8 = fromIntegral
 
 word16 :: Integral a => a -> Word16
 word16 = fromIntegral
+
+word32 :: Integral a => a -> Word32
+word32 = fromIntegral
 
 word8FromNibbles :: Word8 -> Word8 -> Word8
 word8FromNibbles h l = (h `shiftL` 4) + l
@@ -39,4 +42,10 @@ addWithCarry :: Word8 -> Word8 -> (Word8, Bool)
 addWithCarry a b = (a + b, (word16 a + word16 b) > 255)
 
 subtractWithBorrow :: Word8 -> Word8 -> (Word8, Bool)
-subtractWithBorrow a b = (a - b, b < a)
+subtractWithBorrow a b = (a - b, a < b)
+
+(×) :: Integral a => [a] -> [a] -> [(a,a)]
+l × r = [ (x,y) | y <- r, x <- l ]
+
+to1DIndex :: Integral a => a -> (a,a) -> a
+to1DIndex w (x,y) = y * w + x
