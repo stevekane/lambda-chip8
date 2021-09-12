@@ -36,6 +36,7 @@ library
     , bytestring
     , lens
     , random
+    , vector
   default-language: Haskell2010
 
 executable chip8-exe
@@ -52,6 +53,7 @@ executable chip8-exe
     , chip8
     , lens
     , random
+    , vector
   default-language: Haskell2010
 
 test-suite chip8-test
@@ -69,4 +71,5 @@ test-suite chip8-test
     , chip8
     , lens
     , random
+    , vector
   default-language: Haskell2010
