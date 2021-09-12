@@ -3,10 +3,8 @@ module Main where
 import Data.Bits (shiftL, shiftR, (.&.), (.|.), xor)
 import Data.Array (Array, array, (!), (//))
 import Data.Word (Word8, Word16, Word32)
-import Data.Vector.Unboxed (Vector)
 import System.Random 
 import Lib
-import Data.Semigroup (diff)
 
 -- Type aliases
 type RAMAddress = Word16
