@@ -1,6 +1,7 @@
 module Lib where
 
-import Data.Word (Word8, Word16, Word32)
+import Data.Array
+import Data.Word
 import Data.Bits 
 
 toWord8 :: Bool -> Word8
@@ -49,3 +50,17 @@ l × r = [ (x,y) | y <- r, x <- l ]
 
 to1DIndex :: Integral a => a -> (a,a) -> a
 to1DIndex w (x,y) = y * w + x
+
+initialize :: (Integral i, Ix i) => (i,i) -> e -> Array i e
+initialize (min,max) v0 = array (min,max) (fmap initialPair [min..max])
+  where initialPair i = (i,v0)
+
+copyTo :: (Ix a, Ix b, Integral a, Integral b) => (Array a e, a) -> (Array b e, b) -> a -> Array a e
+copyTo (to,t0) (from,f0) n = to // fmap updatePair [0..n]
+  where updatePair i = (t0 + fromIntegral i,from ! (f0 + fromIntegral i))
+
+wrap :: (Integral a, Integral b) => (a,b) -> (a,b) -> (a,b)
+wrap (w,h) (x,y) = (mod x w, mod y h)
+
+bounds :: (Integral a, Integral b) => (a,b) -> (a,b) -> (a,b) -> (a,b)
+bounds (xMax,yMax) (w,h) (x,y) = (max (x + w) xMax - 1, max (y + h) yMax - 1)

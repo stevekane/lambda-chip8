@@ -3,6 +3,7 @@ module Main where
 import Data.Bits (shiftL, shiftR, (.&.), (.|.), xor)
 import Data.Array (Array, array, (!), (//))
 import Data.Word (Word8, Word16, Word32)
+import Data.Bifunctor
 import System.Random 
 import Lib
 
@@ -62,11 +63,9 @@ skipIf pc False = pc + instructionByteWidth
 blockIf pc True = pc
 blockIf pc False = pc + instructionByteWidth
 
-initialize (min,max) v0 = array (min,max) (fmap initialPair [min..max])
-  where initialPair i = (i,v0)
+pixelFromRam offset (x,y) cpu = nthbit x (ram cpu ! (offset + y))
 
-copyTo (to,t0) (from,f0) n = to // fmap updatePair [0..n]
-  where updatePair i = (t0 + fromIntegral i,from ! (f0 + fromIntegral i))
+pixelFromDisplay offset (x,y) cpu = display cpu ! to1DIndex displayWidth (x,y)
 
 -- OpCode transformations
 callSubroutineAtNNN nnn cpu = cpu { 
@@ -170,29 +169,31 @@ clearDisplay cpu = cpu {
   display = blankDisplay
 }
 
--- Fuck this function. This is so complex and ugly.
-drawSpriteAtIToVxVyNHigh vx vy n cpu = cpu {
+drawSpriteAtIToVxVyNHigh vx vy n cpu = cpu {  
   pc = step (pc cpu),
   display = display cpu // pixels,
   registers = registers cpu // [(0xF,toWord8 collisionFlag)]
-} where
-    x = word32 vx `mod` displayWidth
-    y = word32 vy `mod` displayHeight
-    xMax = max (x + 8) displayWidth - 1
-    yMax = max (y + word32 n) displayHeight - 1
-    iMax = xMax - x
-    jMax = yMax - y
-    offsets = [0..iMax] × [0..jMax]
-    ramIndex = i cpu
-    (pixels,collisionFlag) = foldr pixelWrite ([],False) offsets
-    pixelWrite (i,j) (pixels,collisionFlag) = (pixels',collisionFlag')
-      where
-        displayIndex = to1DIndex displayWidth (x + i, y + j)
-        displayValue = display cpu ! displayIndex
-        spriteWord = ram cpu ! (ramIndex + word16 j)
-        spriteValue = nthbit i spriteWord
-        pixels' = (displayIndex,spriteValue) : pixels
-        collisionFlag' = collisionFlag || (spriteValue `xor` displayValue)
+} where 
+  (w,h)            = (8,word32 n)
+  (xRaw,yRaw)      = (word32 vx,word32 vy)
+  (xMin,yMin)      = wrap (displayWidth,displayHeight) (xRaw,yRaw)
+  (xMax,yMax)      = bounds (displayWidth,displayHeight) (w,h) (xMin,yMin)
+  coordinates      = [0..(xMax - xMin)] × [0..(yMax - yMin)]
+  ramOffset        = i cpu
+  displayOffset    = to1DIndex displayWidth (xMin,yMin)
+  pixels           = fmap writePixel coordinates
+  collisionFlag    = foldr detectCollision False coordinates
+  writePixel (x,y) = (index,pixel)
+    where 
+      index        = displayOffset + to1DIndex displayWidth (x,y)
+      ramPixel     = pixelFromRam ramOffset (word16 x,word16 y) cpu
+      displayPixel = pixelFromDisplay displayOffset (x,y) cpu
+      pixel        = ramPixel `xor` displayPixel
+  detectCollision (x,y) cf = cf || collision
+    where
+      ramPixel     = pixelFromRam ramOffset (word16 x,word16 y) cpu
+      displayPixel = pixelFromDisplay displayOffset (x,y) cpu
+      collision    = ramPixel && displayPixel
 
 setIToNNN nnn cpu = cpu {
   pc = step (pc cpu),
@@ -274,59 +275,51 @@ fetch cpu = (highNibble b0, lowNibble b0, highNibble b1, lowNibble b1)
     b0 = ram cpu ! pc cpu
     b1 = ram cpu ! (pc cpu + 1)
 
--- extract commonly-used values from cpu registers and instruction nibbles
-decode :: Nibbles -> Chip8 -> OpCode
-decode (_,x,y,z) cpu = (x,vx,vy,v0,n,nn,nnn)
-  where
-    x = x
-    vx = registers cpu ! x
-    vy = registers cpu ! y
-    v0 = registers cpu ! 0x0
-    nnn = word16FromNibbles x y z
-    nn = word8FromNibbles y z
-    n = z
-  
--- fetch, decode and execute the next opcode
-execute :: Chip8 -> Chip8
-execute cpu = 
-  let nibbles = fetch cpu
-      (x,vx,vy,v0,n,nn,nnn) = decode nibbles cpu
-  in  case nibbles of
-    (0x2, _, _, _)       -> callSubroutineAtNNN nnn cpu
-    (0x0, 0x0, 0xE, 0xE) -> returnFromSubroutine cpu
-    (0x1, _, _, _)       -> jumpToNNN nnn cpu
-    (0xB, _, _, _)       -> jumpToV0PlusNNN v0 nnn cpu
-    (0x3, _, _, _)       -> skipIfVxIsNN vx nn cpu
-    (0x4, _, _, _)       -> skipUnlessVxIsNN vx nn cpu
-    (0x5, _, _, 0x0)     -> skipIfVxIsVy vx vy cpu
-    (0x9, _, _, 0x0)     -> skipUnlessVxIsVy vx vy cpu
-    (0x6, _, _, _)       -> setVxToNN x vx nn cpu
-    (0x7, _, _, _)       -> setVxToVxPlusNN x vx nn cpu
-    (0x8, _, _, 0x0)     -> setVxToVy x vx vy cpu
-    (0x8, _, _, 0x1)     -> setVxToVxOrVy x vx vy cpu
-    (0x8, _, _, 0x2)     -> setVxToVxAndVy x vx vy cpu
-    (0x8, _, _, 0x3)     -> setVxToVxXorVy x vx vy cpu
-    (0x8, _, _, 0x4)     -> setVxToVxPlusVy x vx vy cpu
-    (0x8, _, _, 0x5)     -> setVxToVxMinusVy x vx vy cpu
-    (0x8, _, _, 0x7)     -> setVxToVyMinusVx x vx vy cpu
-    (0x8, _, _, 0x6)     -> rightShiftVxAndStoreLSBVx x vx cpu
-    (0x8, _, _, 0xE)     -> leftShiftVxAndStoreMSBVx x vx cpu
-    (0xC, _, _, _)       -> setVxToRandAndNN x nn cpu
-    (0x0,0x0,0xE,0x0)    -> clearDisplay cpu
-    (0xD, _, _, _)       -> drawSpriteAtIToVxVyNHigh vx vy n cpu
-    (0xA, _, _, _)       -> setIToNNN nnn cpu
-    (0xF, _, 0x1, 0xE)   -> setIToIPlusVx vx cpu
-    (0xF, _, 0x2, 0x9)   -> setIToISpriteAddressVx vx cpu
-    (0xF, _, 0x3, 0x3)   -> storeBCDVxAtI vx cpu
-    (0xF, _, 0x5, 0x5)   -> dumpRegistersV0ToVxToI x cpu
-    (0xF, _, 0x6, 0x5)   -> loadRegistersV0ToVxFromI x cpu
-    (0xF, _, 0x0, 0x7)   -> setVxToD x cpu
-    (0xF, _, 0x1, 0x5)   -> setDToVx vx cpu
-    (0xF, _, 0x1, 0x8)   -> setSToVx vx cpu
-    (0xE, _, 0x9, 0xE)   -> skipIfKeyDownVx vx cpu
-    (0xE, _, 0xA, 0x1)   -> skipUnlessKeyDownVx vx cpu
-    (0xF, _, 0x0, 0xA)   -> blockUnlessKeyDownVx vx cpu
-    _                    -> cpu
+-- execute the instruction after parsing nibbles 
+execute :: Nibbles -> Chip8 -> Chip8
+execute (a,x,y,n) cpu = case (a,x,y,n) of 
+  (0x2, _, _, _)       -> callSubroutineAtNNN nnn cpu
+  (0x0, 0x0, 0xE, 0xE) -> returnFromSubroutine cpu
+  (0x1, _, _, _)       -> jumpToNNN nnn cpu
+  (0xB, _, _, _)       -> jumpToV0PlusNNN v0 nnn cpu
+  (0x3, _, _, _)       -> skipIfVxIsNN vx nn cpu
+  (0x4, _, _, _)       -> skipUnlessVxIsNN vx nn cpu
+  (0x5, _, _, 0x0)     -> skipIfVxIsVy vx vy cpu
+  (0x9, _, _, 0x0)     -> skipUnlessVxIsVy vx vy cpu
+  (0x6, _, _, _)       -> setVxToNN x vx nn cpu
+  (0x7, _, _, _)       -> setVxToVxPlusNN x vx nn cpu
+  (0x8, _, _, 0x0)     -> setVxToVy x vx vy cpu
+  (0x8, _, _, 0x1)     -> setVxToVxOrVy x vx vy cpu
+  (0x8, _, _, 0x2)     -> setVxToVxAndVy x vx vy cpu
+  (0x8, _, _, 0x3)     -> setVxToVxXorVy x vx vy cpu
+  (0x8, _, _, 0x4)     -> setVxToVxPlusVy x vx vy cpu
+  (0x8, _, _, 0x5)     -> setVxToVxMinusVy x vx vy cpu
+  (0x8, _, _, 0x7)     -> setVxToVyMinusVx x vx vy cpu
+  (0x8, _, _, 0x6)     -> rightShiftVxAndStoreLSBVx x vx cpu
+  (0x8, _, _, 0xE)     -> leftShiftVxAndStoreMSBVx x vx cpu
+  (0xC, _, _, _)       -> setVxToRandAndNN x nn cpu
+  (0x0,0x0,0xE,0x0)    -> clearDisplay cpu
+  (0xD, _, _, _)       -> drawSpriteAtIToVxVyNHigh vx vy n cpu
+  (0xA, _, _, _)       -> setIToNNN nnn cpu
+  (0xF, _, 0x1, 0xE)   -> setIToIPlusVx vx cpu
+  (0xF, _, 0x2, 0x9)   -> setIToISpriteAddressVx vx cpu
+  (0xF, _, 0x3, 0x3)   -> storeBCDVxAtI vx cpu
+  (0xF, _, 0x5, 0x5)   -> dumpRegistersV0ToVxToI x cpu
+  (0xF, _, 0x6, 0x5)   -> loadRegistersV0ToVxFromI x cpu
+  (0xF, _, 0x0, 0x7)   -> setVxToD x cpu
+  (0xF, _, 0x1, 0x5)   -> setDToVx vx cpu
+  (0xF, _, 0x1, 0x8)   -> setSToVx vx cpu
+  (0xE, _, 0x9, 0xE)   -> skipIfKeyDownVx vx cpu
+  (0xE, _, 0xA, 0x1)   -> skipUnlessKeyDownVx vx cpu
+  (0xF, _, 0x0, 0xA)   -> blockUnlessKeyDownVx vx cpu
+  _                    -> cpu
+  where 
+  x = x
+  vx = registers cpu ! x
+  vy = registers cpu ! y
+  v0 = registers cpu ! 0x0
+  nnn = word16FromNibbles x y n
+  nn = word8FromNibbles y n
 
 rndSeed = mkStdGen 10
 chip8 = load rndSeed ()
