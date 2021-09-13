@@ -3,8 +3,8 @@ module Main where
 import Data.Bits (shiftL, shiftR, (.&.), (.|.), xor)
 import Data.Array (Array, array, (!), (//))
 import Data.Word (Word8, Word16, Word32)
-import Data.Bifunctor
 import System.Random 
+import qualified Graphics.UI.GLFW as GLFW
 import Lib
 
 -- Type aliases
@@ -34,13 +34,8 @@ data Chip8 = Chip8 {
 } deriving (Show)
 
 {-
-Think about the actual API here... what are fetch decode and execute really?
-
-It doesn't seem like the thing I am calling an OpCode really is one... it's just
-a bag of commonly-used variables extracted from registers or assembled from nibbles.
-
 * Clean this up and start adding tests for all the key operations.
-* Implement drawing algorithm
+- * Implement drawing algorithm
 * Add built-on font data as binary loaded into RAM
 * Read binary data from file and load into RAM as program at 512
 * Implement simple console renderer to test IBM logo and other similar programs
