@@ -3,11 +3,13 @@ module Main where
 import Control.Monad (forever)
 import Data.Bits (shiftL, shiftR, (.&.), (.|.), xor)
 import Data.Word (Word8, Word16, Word32)
-import qualified Data.ByteString as ByteString
-import Data.Array (Array, Ix, array, listArray, assocs, (!), (//))
-import System.Random 
-import Graphics.UI.GLFW as GLFW
-import Graphics.GL
+import Data.Array (Array, Ix, array, listArray, assocs, ixmap, (!), (//))
+import System.Random (StdGen, mkStdGen, genWord8)
+
+import qualified Data.ByteString as BS
+import qualified Graphics.UI.GLFW as GLFW
+import qualified Graphics.GL as GL
+
 import Lib
 
 -- Type aliases
@@ -18,6 +20,8 @@ type DisplayAddress = Word32
 type Pixel = Bool
 type InputState = Bool
 type Registers = Array RegisterAddress Word8
+type Program = Array RAMAddress Word8
+type Font = Array RAMAddress Word8
 type Nibbles = (Word8, Word8, Word8, Word8)
 type OpCode = (Word8, Word8, Word8, Word8, Word8, Word8, Word16)
 
@@ -175,7 +179,7 @@ drawSpriteAtIToVxVyNHigh vx vy n cpu = cpu {
   (w,h)            = (8,word32 n)
   (xRaw,yRaw)      = (word32 vx,word32 vy)
   (xMin,yMin)      = wrap (displayWidth,displayHeight) (xRaw,yRaw)
-  (xMax,yMax)      = bounds (displayWidth,displayHeight) (w,h) (xMin,yMin)
+  (xMax,yMax)      = bound (displayWidth,displayHeight) (w,h) (xMin,yMin)
   coordinates      = [0..(xMax - xMin)] × [0..(yMax - yMin)]
   ramOffset        = i cpu
   displayOffset    = to1DIndex displayWidth (xMin,yMin)
@@ -250,64 +254,37 @@ blockUnlessKeyDownVx vx cpu = cpu {
   pc = blockIf (pc cpu) (not (inputs cpu ! vx))
 }
 
-defaultFont :: Array RAMAddress Word8
-defaultFont = listArray (0,79) [
-  0xF0, 0x90, 0x90, 0x90, 0xF0,
-  0x20, 0x60, 0x20, 0x20, 0x70,
-  0xF0, 0x10, 0xF0, 0x80, 0xF0,
-  0xF0, 0x10, 0xF0, 0x10, 0xF0,
-  0x90, 0x90, 0xF0, 0x10, 0x10,
-  0xF0, 0x80, 0xF0, 0x10, 0xF0,
-  0xF0, 0x80, 0xF0, 0x90, 0xF0,
-  0xF0, 0x10, 0x20, 0x40, 0x40,
-  0xF0, 0x90, 0xF0, 0x90, 0xF0,
-  0xF0, 0x90, 0xF0, 0x10, 0xF0,
-  0xF0, 0x90, 0xF0, 0x90, 0x90,
-  0xE0, 0x90, 0xE0, 0x90, 0xE0,
-  0xF0, 0x80, 0x80, 0x80, 0xF0,
-  0xE0, 0x90, 0x90, 0x90, 0xE0,
-  0xF0, 0x80, 0xF0, 0x80, 0xF0,
-  0xF0, 0x80, 0xF0, 0x80, 0x80 
-  ]
-
--- TODO: This is an awkward helper function to map a bytestring
--- to its association list in order to update an array with
--- the associations. This seems stupidly-convoluted and that there
--- probably should be some sort of memcopy-like operation possible 
--- here... may be time to use Vector instead of Array?
-associationsOf :: Integral i => i -> ByteString.ByteString -> [(i,Word8)]
-associationsOf offset bs = fmap toAssoc indices 
-  where
-    length = ByteString.length bs
-    indices = [0..(length - 1)]
-    toAssoc i = (offset + fromIntegral i, ByteString.index bs i)
-
--- Construct new CPU with random seed and program
-load :: StdGen -> ByteString.ByteString -> Chip8
-load randomSeed program = Chip8 {
+seed :: StdGen -> Chip8
+seed randomSeed = Chip8 {
   randomSeed = randomSeed,
   display = blankDisplay,
   inputs = initialize (0,0xF) off,
   registers = initialize (0,0xF) 0, 
   stack = initialize (0,0xF) 0,
-  ram = initialize (0,0xFFF) 0 // fontAssociations // programAssociations,
+  ram = initialize (0,0xFFF) 0,
   pc = 0x200,
   sp = 0, 
   d = 0,
   s = 0,
   i = 0
-} where 
-  fontAssociations = assocs defaultFont
-  programAssociations = associationsOf 0x200 program
+}
 
--- fetch two bytes from cpu at current pc and split into 4 nibbles
+loadFont :: Font -> Chip8 -> Chip8
+loadFont font cpu = cpu {
+  ram = ram cpu // assocs font
+}
+
+loadProgram :: Program -> Chip8 -> Chip8
+loadProgram program cpu = cpu {
+  ram = ram cpu // fmap (shiftBy 0x200) (assocs program)
+} where shiftBy o (i,j) = (i + o,j)
+
 fetch :: Chip8 -> Nibbles
 fetch cpu = (highNibble b0, lowNibble b0, highNibble b1, lowNibble b1)
   where 
     b0 = ram cpu ! pc cpu
     b1 = ram cpu ! (pc cpu + 1)
 
--- execute the instruction after parsing nibbles 
 execute :: Nibbles -> Chip8 -> Chip8
 execute (a,x,y,n) cpu = case (a,x,y,n) of 
   (0x2, _, _, _)       -> callSubroutineAtNNN nnn cpu
@@ -367,17 +344,19 @@ main = do
   -- GLFW.setKeyCallback window (Just onKeyPressed)
   -- GLFW.setWindowCloseCallback window (Just onShutown)
 
-  -- load program binaries
-  ibmLogoBinary <- ByteString.readFile "roms/IBM-logo.ch8"
+  fontBinary <- BS.readFile "fonts/default-font.font"
+  ibmLogoBinary <- BS.readFile "roms/IBM-logo.ch8"
 
   let rndSeed = mkStdGen 10
-  let chip8 = load rndSeed ibmLogoBinary
+  let font = toArray fontBinary
+  let program = toArray ibmLogoBinary
+  let chip8 = loadProgram program $ loadFont font $ seed rndSeed
 
-  print $ ram chip8
-  print ibmLogoBinary
+  putStrLn $ showColumns 16 2 (ram chip8)
+  -- print ibmLogoBinary
 
   forever $ do
     GLFW.pollEvents 
-    glClearColor 0 0 0 0
-    glClearDepth 1
+    GL.glClearColor 0 0 0 0
+    GL.glClearDepth 1
     GLFW.swapBuffers window

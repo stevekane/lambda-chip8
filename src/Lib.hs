@@ -1,5 +1,6 @@
 module Lib where
 
+import qualified Data.ByteString as BS
 import Data.Array
 import Data.Word
 import Data.Bits 
@@ -59,8 +60,21 @@ copyTo :: (Ix a, Ix b, Integral a, Integral b) => (Array a e, a) -> (Array b e, 
 copyTo (to,t0) (from,f0) n = to // fmap updatePair [0..n]
   where updatePair i = (t0 + fromIntegral i,from ! (f0 + fromIntegral i))
 
+toArray :: (Ix i, Num i) => BS.ByteString -> Array i Word8
+toArray bs = array (0, fromIntegral (length - 1)) (fmap toAssoc [0..(length-1)])
+  where 
+    length = BS.length bs
+    toAssoc i = (fromIntegral i, BS.index bs i)
+
 wrap :: (Integral a, Integral b) => (a,b) -> (a,b) -> (a,b)
 wrap (w,h) (x,y) = (mod x w, mod y h)
 
-bounds :: (Integral a, Integral b) => (a,b) -> (a,b) -> (a,b) -> (a,b)
-bounds (xMax,yMax) (w,h) (x,y) = (max (x + w) xMax - 1, max (y + h) yMax - 1)
+bound :: (Integral a, Integral b) => (a,b) -> (a,b) -> (a,b) -> (a,b)
+bound (xMax,yMax) (w,h) (x,y) = (max (x + w) xMax - 1, max (y + h) yMax - 1)
+
+showColumns :: (Ix i, Integral i, Show a) => i -> i -> Array i a -> String
+showColumns c p a = foldr render "" (assocs a)
+  where 
+    prefix i = if i `mod` c == 0 then "\n" else ""
+    spacer i = if i `mod` p == 0 then "\t\t" else "\t"
+    render (i,y) x = prefix i ++ show y ++ spacer (i + 1) ++ x
