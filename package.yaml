@@ -18,6 +18,8 @@ dependencies:
 - vector
 - array
 - GLFW-b
+- OpenGL
+- OpenGLRaw
 - random
 
 library:

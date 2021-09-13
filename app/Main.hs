@@ -1,10 +1,12 @@
 module Main where
 
+import Control.Monad (forever)
 import Data.Bits (shiftL, shiftR, (.&.), (.|.), xor)
 import Data.Array (Array, array, (!), (//))
 import Data.Word (Word8, Word16, Word32)
 import System.Random 
-import qualified Graphics.UI.GLFW as GLFW
+import Graphics.UI.GLFW as GLFW
+import Graphics.GL
 import Lib
 
 -- Type aliases
@@ -319,7 +321,21 @@ execute (a,x,y,n) cpu = case (a,x,y,n) of
 rndSeed = mkStdGen 10
 chip8 = load rndSeed ()
 
+printError e s = putStrLn $ unwords [show e, show s]
+
 main :: IO ()
 main = do
-  print $ digits 0xf3
-  print $ fetch chip8
+  True <- GLFW.init
+  Just window <- GLFW.createWindow 640 320 "chip8" Nothing Nothing 
+  GLFW.defaultWindowHints
+  GLFW.setErrorCallback (Just printError)
+  GLFW.makeContextCurrent (Just window)
+  -- GLFW.setWindowRefreshCallback window (Just onRefresh)
+  -- GLFW.setFramebufferSizeCallback window (Just onResize)
+  -- GLFW.setKeyCallback window (Just onKeyPressed)
+  -- GLFW.setWindowCloseCallback window (Just onShutown)
+  forever $ do
+    GLFW.pollEvents 
+    glClearColor 0 0 0 0
+    glClearDepth 1
+    GLFW.swapBuffers window
