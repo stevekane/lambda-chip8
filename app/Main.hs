@@ -2,8 +2,9 @@ module Main where
 
 import Control.Monad (forever)
 import Data.Bits (shiftL, shiftR, (.&.), (.|.), xor)
-import Data.Array (Array, array, listArray, (!), (//))
 import Data.Word (Word8, Word16, Word32)
+import qualified Data.ByteString as ByteString
+import Data.Array (Array, Ix, array, listArray, assocs, (!), (//))
 import System.Random 
 import Graphics.UI.GLFW as GLFW
 import Graphics.GL
@@ -249,7 +250,8 @@ blockUnlessKeyDownVx vx cpu = cpu {
   pc = blockIf (pc cpu) (not (inputs cpu ! vx))
 }
 
-defaultFont = listArray (0,80) [
+defaultFont :: Array RAMAddress Word8
+defaultFont = listArray (0,79) [
   0xF0, 0x90, 0x90, 0x90, 0xF0,
   0x20, 0x60, 0x20, 0x20, 0x70,
   0xF0, 0x10, 0xF0, 0x80, 0xF0,
@@ -268,21 +270,35 @@ defaultFont = listArray (0,80) [
   0xF0, 0x80, 0xF0, 0x80, 0x80 
   ]
 
+-- TODO: This is an awkward helper function to map a bytestring
+-- to its association list in order to update an array with
+-- the associations. This seems stupidly-convoluted and that there
+-- probably should be some sort of memcopy-like operation possible 
+-- here... may be time to use Vector instead of Array?
+associationsOf :: Integral i => i -> ByteString.ByteString -> [(i,Word8)]
+associationsOf offset bs = fmap toAssoc indices 
+  where
+    length = ByteString.length bs
+    indices = [0..(length - 1)]
+    toAssoc i = (offset + fromIntegral i, ByteString.index bs i)
+
 -- Construct new CPU with random seed and program
-load :: StdGen -> () -> Chip8
+load :: StdGen -> ByteString.ByteString -> Chip8
 load randomSeed program = Chip8 {
   randomSeed = randomSeed,
   display = blankDisplay,
-  inputs = initialize (0,15) off,
-  registers = initialize (0,15) 0, 
-  stack = initialize (0,15) 0,
-  ram = initialize (0,4095) 0,
-  pc = 512,
+  inputs = initialize (0,0xF) off,
+  registers = initialize (0,0xF) 0, 
+  stack = initialize (0,0xF) 0,
+  ram = initialize (0,0xFFF) 0 // fontAssociations // programAssociations,
+  pc = 0x200,
   sp = 0, 
   d = 0,
   s = 0,
   i = 0
-}
+} where 
+  fontAssociations = assocs defaultFont
+  programAssociations = associationsOf 0x200 program
 
 -- fetch two bytes from cpu at current pc and split into 4 nibbles
 fetch :: Chip8 -> Nibbles
@@ -337,9 +353,6 @@ execute (a,x,y,n) cpu = case (a,x,y,n) of
   nnn = word16FromNibbles x y n
   nn = word8FromNibbles y n
 
-rndSeed = mkStdGen 10
-chip8 = load rndSeed ()
-
 printError e s = putStrLn $ unwords [show e, show s]
 
 main :: IO ()
@@ -353,9 +366,18 @@ main = do
   -- GLFW.setFramebufferSizeCallback window (Just onResize)
   -- GLFW.setKeyCallback window (Just onKeyPressed)
   -- GLFW.setWindowCloseCallback window (Just onShutown)
+
+  -- load program binaries
+  ibmLogoBinary <- ByteString.readFile "roms/IBM-logo.ch8"
+
+  let rndSeed = mkStdGen 10
+  let chip8 = load rndSeed ibmLogoBinary
+
+  print $ ram chip8
+  print ibmLogoBinary
+
   forever $ do
     GLFW.pollEvents 
     glClearColor 0 0 0 0
     glClearDepth 1
     GLFW.swapBuffers window
-    print "doggys"
