@@ -394,16 +394,6 @@ main = do
   backgroundColorLocation <- uniformLocation program "backgroundColor"
   displayLocation <- uniformLocation program "display"
 
-  -- REMINDER: These vertex array buffer things are NOT associated with
-  -- programs. They are stored by integer addresses into buffers and must be
-  -- enabled if you want draw calls to use their data... or somethig... I don't know
-  -- This does mean that they COULD be created/filled before the program is 
-  -- created.
-  -- NOTE: It appears that the location = 0 in the actual vertex shader itself
-  -- is what determines where this shader looks to find this attribute buffer
-  -- whenever it is executed by a draw call... this is interesting and maybe 
-  -- different than it used to be?
-
   -- Store attribute locations
   -- TODO: maybe read this data from a file?
   let fullScreenTriangle :: [Vertex2 Float] = [ Vertex2 (-4) (-4), Vertex2 0 4, Vertex2 4 (-4) ]
@@ -411,6 +401,10 @@ main = do
   let loadBuffer size ptr = do bufferData ArrayBuffer $= (size,ptr,StaticDraw)
 
   -- create vertex buffer, bind it, and fill with data
+  -- VAO created and bound
+  -- All subsequent settings apply to this bound VAO
+  -- This VAO being bound is what tells the current program where to 
+  -- find and bind its buffers
   triangles <- genObjectName
   bindVertexArrayObject $= Just triangles
   vertexBuffer <- genObjectName 
@@ -425,12 +419,9 @@ main = do
   vertexAttribArray positionLocation $= Enabled
 
   -- TODO:
-  --  bind program to be active
-  --  create full-screen triangle and upload to VRAM as bound attribute
   --  create uniform vec4 color
   --  create uniform vec4 backgroundColor
   --  create uniform texture, populate, and upload to VRAM
-  --  bindVertexArrayObject $= Just triangles
 
   forever $ do
     GLFW.pollEvents 
@@ -438,6 +429,8 @@ main = do
     viewport $= (Position 0 0, Size (fromIntegral width) (fromIntegral height))
     clearColor $= Color4 0 0 0 1
     clear [ColorBuffer]
+    -- TODO: Set uniform values color,backgroundColor
+    -- TODO: upload latest texture data to uniform texture display
     bindVertexArrayObject $= Just triangles
     drawArrays Triangles 0 3
     GLFW.swapBuffers window
