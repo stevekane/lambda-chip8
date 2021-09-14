@@ -1,3 +1,5 @@
+{-# LANGUAGE ScopedTypeVariables #-}
+
 module Main where
 
 import Control.Monad (forever)
@@ -8,7 +10,10 @@ import System.Random (StdGen, mkStdGen, genWord8)
 
 import qualified Data.ByteString as BS
 import qualified Graphics.UI.GLFW as GLFW
-import qualified Graphics.GL as GL
+import Graphics.Rendering.OpenGL
+import Foreign.Marshal.Array
+import Foreign.Ptr
+import Foreign.Storable
 
 import Lib
 
@@ -20,7 +25,7 @@ type DisplayAddress = Word32
 type Pixel = Bool
 type InputState = Bool
 type Registers = Array RegisterAddress Word8
-type Program = Array RAMAddress Word8
+type Rom = Array RAMAddress Word8
 type Font = Array RAMAddress Word8
 type Nibbles = (Word8, Word8, Word8, Word8)
 type OpCode = (Word8, Word8, Word8, Word8, Word8, Word8, Word16)
@@ -30,8 +35,8 @@ data Chip8 = Chip8 {
   randomSeed :: StdGen,                        -- seeded generator for pseudo-random bytes
   display    :: Array DisplayAddress Pixel,    -- 64 × 32 booleans indexed by a 32-bit Word
   inputs     :: Array Word8 InputState,        -- 16 booleans
-  d          :: Word8,                         -- byte delay timer
-  s          :: Word8,                         -- byte sound timer
+  d          :: Word8,                         -- 1-byte delay timer
+  s          :: Word8,                         -- 1-byte sound timer
   pc         :: RAMAddress,                    -- 2-byte program counter
   sp         :: StackAddress,                  -- 1-byte stack pointer
   i          :: RAMAddress,                    -- 2-byte index register
@@ -43,9 +48,8 @@ data Chip8 = Chip8 {
 {-
 * Clean this up and start adding tests for all the key operations.
 - * Implement drawing algorithm
-* Add built-on font data as binary loaded into RAM
-* Read binary data from file and load into RAM as program at 512
-* Implement simple console renderer to test IBM logo and other similar programs
+- * Add built-in font data as binary loaded into RAM
+- * Read binary data from file and load into RAM as program at 512
 -}
 
 -- Constants
@@ -274,9 +278,10 @@ loadFont font cpu = cpu {
   ram = ram cpu // assocs font
 }
 
-loadProgram :: Program -> Chip8 -> Chip8
-loadProgram program cpu = cpu {
-  ram = ram cpu // fmap (shiftBy 0x200) (assocs program)
+loadRom :: Rom -> Chip8 -> Chip8
+loadRom rom cpu = cpu {
+  pc = 0x200,
+  ram = ram cpu // fmap (shiftBy 0x200) (assocs rom)
 } where shiftBy o (i,j) = (i + o,j)
 
 fetch :: Chip8 -> Nibbles
@@ -330,12 +335,25 @@ execute (a,x,y,n) cpu = case (a,x,y,n) of
   nnn = word16FromNibbles x y n
   nn = word8FromNibbles y n
 
+-- TODO: do i need this? need to define all callbacks for GLFW
 printError e s = putStrLn $ unwords [show e, show s]
 
 main :: IO ()
 main = do
+  -- Emulator loading and initialization
+  fontBinary <- BS.readFile "fonts/default-font.bin"
+  ibmLogoBinary <- BS.readFile "roms/IBM-logo.bin"
+
+  let rndSeed = mkStdGen 10
+  let font = toArray fontBinary
+  let rom = toArray ibmLogoBinary
+  let chip8 = loadRom rom $ loadFont font $ seed rndSeed
+
+  -- Renderer loading and initialization
+  let width = 640
+  let height = 320
   True <- GLFW.init
-  Just window <- GLFW.createWindow 640 320 "chip8" Nothing Nothing 
+  Just window <- GLFW.createWindow width height "chip8" Nothing Nothing 
   GLFW.defaultWindowHints
   GLFW.setErrorCallback (Just printError)
   GLFW.makeContextCurrent (Just window)
@@ -344,19 +362,63 @@ main = do
   -- GLFW.setKeyCallback window (Just onKeyPressed)
   -- GLFW.setWindowCloseCallback window (Just onShutown)
 
-  fontBinary <- BS.readFile "fonts/default-font.font"
-  ibmLogoBinary <- BS.readFile "roms/IBM-logo.ch8"
+  -- compile vertex shader
+  vertexShaderCode <- readFile "shaders/screen-vertex.glsl"
+  vertexShader <- createShader VertexShader
+  shaderSourceBS vertexShader $= packUtf8 vertexShaderCode
+  compileShader vertexShader
+  vertexShaderCompiled <- get (compileStatus vertexShader)
+  vertexShaderInfo <- get (shaderInfoLog vertexShader)
+  print vertexShaderInfo
 
-  let rndSeed = mkStdGen 10
-  let font = toArray fontBinary
-  let program = toArray ibmLogoBinary
-  let chip8 = loadProgram program $ loadFont font $ seed rndSeed
+  -- compile fragment shader
+  fragmentShaderCode <- readFile "shaders/screen-fragment.glsl"
+  fragmentShader <- createShader FragmentShader
+  shaderSourceBS fragmentShader $= packUtf8 fragmentShaderCode
+  compileShader fragmentShader
+  fragmentShaderCompiled <- get (compileStatus fragmentShader)
+  fragmentShaderInfo <- get (shaderInfoLog fragmentShader)
+  print fragmentShaderInfo
 
-  putStrLn $ showColumns 16 2 (ram chip8)
-  -- print ibmLogoBinary
+  -- link program
+  program <- createProgram
+  attachShader program vertexShader
+  attachShader program fragmentShader
+  linkProgram program -- may fail. should read logs
+  programLinked <- get (linkStatus program)
+  programInfo <- get (programInfoLog program)
+  print programInfo
+
+  -- Store Uniform locations
+  colorLocation <- uniformLocation program "color"
+  backgroundColorLocation <- uniformLocation program "backgroundColor"
+  displayLocation <- uniformLocation program "display"
+
+  -- Store attribute locations
+  -- TODO: maybe read this data from a file?
+  let fullScreenTriangle :: [Vertex2 Float] = [ Vertex2 (-4) (-4), Vertex2 0 4, Vertex2 4 (-4) ]
+  let size = fromIntegral (length fullScreenTriangle * sizeOf (head fullScreenTriangle))
+  let positionLocation = AttribLocation 0
+
+  -- create vertex buffer, bind it, and fill with data
+  vertexBuffer <- genObjectName 
+  bindBuffer ArrayBuffer $= Just vertexBuffer
+  withArray fullScreenTriangle $ \ptr -> do
+    bufferData ArrayBuffer $= (size, ptr, StaticDraw)
+
+  -- TODO:
+  --  bind program to be active
+  --  create full-screen triangle and upload to VRAM as bound attribute
+  --  create uniform vec4 color
+  --  create uniform vec4 backgroundColor
+  --  create uniform texture, populate, and upload to VRAM
+  --  bindVertexArrayObject $= Just triangles
 
   forever $ do
     GLFW.pollEvents 
-    GL.glClearColor 0 0 0 0
-    GL.glClearDepth 1
+    viewport $= (Position 0 0, Size (fromIntegral width) (fromIntegral height))
+    clearColor $= Color4 0.3 0.4 0.42 0
+    clearDepth $= 1
+    clear [ColorBuffer]
+    --  drawArrays Triangles firstIndex numVertices
     GLFW.swapBuffers window
