@@ -394,17 +394,35 @@ main = do
   backgroundColorLocation <- uniformLocation program "backgroundColor"
   displayLocation <- uniformLocation program "display"
 
+  -- REMINDER: These vertex array buffer things are NOT associated with
+  -- programs. They are stored by integer addresses into buffers and must be
+  -- enabled if you want draw calls to use their data... or somethig... I don't know
+  -- This does mean that they COULD be created/filled before the program is 
+  -- created.
+  -- NOTE: It appears that the location = 0 in the actual vertex shader itself
+  -- is what determines where this shader looks to find this attribute buffer
+  -- whenever it is executed by a draw call... this is interesting and maybe 
+  -- different than it used to be?
+
   -- Store attribute locations
   -- TODO: maybe read this data from a file?
   let fullScreenTriangle :: [Vertex2 Float] = [ Vertex2 (-4) (-4), Vertex2 0 4, Vertex2 4 (-4) ]
   let size = fromIntegral (length fullScreenTriangle * sizeOf (head fullScreenTriangle))
-  let positionLocation = AttribLocation 0
+  let loadBuffer size ptr = do bufferData ArrayBuffer $= (size,ptr,StaticDraw)
 
   -- create vertex buffer, bind it, and fill with data
+  triangles <- genObjectName
+  bindVertexArrayObject $= Just triangles
   vertexBuffer <- genObjectName 
   bindBuffer ArrayBuffer $= Just vertexBuffer
-  withArray fullScreenTriangle $ \ptr -> do
-    bufferData ArrayBuffer $= (size, ptr, StaticDraw)
+  withArray fullScreenTriangle (loadBuffer size)
+
+  let positionLocation = AttribLocation 0
+  let bufferOffset = plusPtr nullPtr 0
+  let positionDescriptor = VertexArrayDescriptor 2 Float 0 bufferOffset
+
+  vertexAttribPointer positionLocation $= (ToFloat, positionDescriptor)
+  vertexAttribArray positionLocation $= Enabled
 
   -- TODO:
   --  bind program to be active
@@ -416,9 +434,10 @@ main = do
 
   forever $ do
     GLFW.pollEvents 
+    currentProgram $= Just program
     viewport $= (Position 0 0, Size (fromIntegral width) (fromIntegral height))
-    clearColor $= Color4 0.3 0.4 0.42 0
-    clearDepth $= 1
+    clearColor $= Color4 0 0 0 1
     clear [ColorBuffer]
-    --  drawArrays Triangles firstIndex numVertices
+    bindVertexArrayObject $= Just triangles
+    drawArrays Triangles 0 3
     GLFW.swapBuffers window
