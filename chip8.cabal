@@ -26,6 +26,7 @@ source-repository head
 library
   exposed-modules:
       Lib
+      Rendering
   other-modules:
       Paths_chip8
   hs-source-dirs:
@@ -37,6 +38,7 @@ library
     , array
     , base >=4.7 && <5
     , bytestring
+    , containers
     , random
     , vector
   default-language: Haskell2010
@@ -56,6 +58,7 @@ executable chip8-exe
     , base >=4.7 && <5
     , bytestring
     , chip8
+    , containers
     , random
     , vector
   default-language: Haskell2010
@@ -76,6 +79,7 @@ test-suite chip8-test
     , base >=4.7 && <5
     , bytestring
     , chip8
+    , containers
     , random
     , vector
   default-language: Haskell2010

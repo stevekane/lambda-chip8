@@ -17,7 +17,7 @@ import qualified Data.ByteString as BS
 import qualified Graphics.UI.GLFW as GLFW
 
 import Lib
-import Data.Dynamic (fromDynamic)
+import Rendering
 
 -- Type aliases
 type RAMAddress = Word16
@@ -34,17 +34,17 @@ type OpCode = (Word8, Word8, Word8, Word8, Word8, Word8, Word16)
 
 -- Model for Chip8 CPU
 data Chip8 = Chip8 {
-  randomSeed :: StdGen,                        -- seeded generator for pseudo-random bytes
-  display    :: Array DisplayAddress Pixel,    -- 64 × 32 booleans indexed by a 32-bit Word
-  inputs     :: Array Word8 InputState,        -- 16 booleans
-  d          :: Word8,                         -- 1-byte delay timer
-  s          :: Word8,                         -- 1-byte sound timer
-  pc         :: RAMAddress,                    -- 2-byte program counter
-  sp         :: StackAddress,                  -- 1-byte stack pointer
-  i          :: RAMAddress,                    -- 2-byte index register
-  registers  :: Array RegisterAddress Word8,   -- 16 bytes
-  stack      :: Array StackAddress RAMAddress, -- 16 2-byte adresses
-  ram        :: Array RAMAddress Word8         -- 4096 bytes indexed by word16
+  randomSeed :: StdGen,
+  display    :: Array DisplayAddress Pixel,
+  inputs     :: Array Word8 InputState,
+  d          :: Word8,
+  s          :: Word8,
+  pc         :: RAMAddress,
+  sp         :: StackAddress,
+  i          :: RAMAddress,
+  registers  :: Array RegisterAddress Word8,
+  stack      :: Array StackAddress RAMAddress,
+  ram        :: Array RAMAddress Word8
 } deriving (Show)
 
 -- Constants
@@ -358,38 +358,6 @@ main = do
   -- GLFW.setKeyCallback window (Just onKeyPressed)
   -- GLFW.setWindowCloseCallback window (Just onShutown)
 
-  -- compile vertex shader
-  vertexShaderCode <- readFile "shaders/screen-vertex.glsl"
-  vertexShader <- createShader VertexShader
-  shaderSourceBS vertexShader $= packUtf8 vertexShaderCode
-  compileShader vertexShader
-  vertexShaderCompiled <- get (compileStatus vertexShader)
-  vertexShaderInfo <- get (shaderInfoLog vertexShader)
-  print vertexShaderInfo
-
-  -- compile fragment shader
-  fragmentShaderCode <- readFile "shaders/screen-fragment.glsl"
-  fragmentShader <- createShader FragmentShader
-  shaderSourceBS fragmentShader $= packUtf8 fragmentShaderCode
-  compileShader fragmentShader
-  fragmentShaderCompiled <- get (compileStatus fragmentShader)
-  fragmentShaderInfo <- get (shaderInfoLog fragmentShader)
-  print fragmentShaderInfo
-
-  -- link program
-  program <- createProgram
-  attachShader program vertexShader
-  attachShader program fragmentShader
-  linkProgram program -- may fail. should read logs
-  programLinked <- get (linkStatus program)
-  programInfo <- get (programInfoLog program)
-  print programInfo
-
-  -- Store Uniform locations
-  colorLocation <- uniformLocation program "color"
-  backgroundColorLocation <- uniformLocation program "backgroundColor"
-  displayLocation <- uniformLocation program "display"
-
   -- Store attribute locations
   -- TODO: maybe read this data from a file?
   let fullScreenTriangle :: [Vertex2 Float] = [ Vertex2 (-4) (-4), Vertex2 0 4, Vertex2 4 (-4) ]
@@ -426,9 +394,21 @@ main = do
   textureWrapMode Texture2D T $= wrap
   textureBinding Texture2D $= Nothing
 
+  -- Setup a program
+  vertexShaderCode <- readFile "shaders/screen-vertex.glsl"
+  fragmentShaderCode <- readFile "shaders/screen-fragment.glsl"
+  Compiled program <- mkShaderProgram vertexShaderCode fragmentShaderCode
+  colorLocation <- uniformLocation program "color"
+  backgroundColorLocation <- uniformLocation program "backgroundColor"
+  displayLocation <- uniformLocation program "display"
+  let color = Color4 1 (195 / 255) (160 / 255) 1
+  let backgroundColor = Color4 (132 / 255) (132 / 255) (99 / 255) 1
+  let uniforms = [(colorLocation, Color4Float color),
+                  (backgroundColorLocation, Color4Float backgroundColor),
+                  (displayLocation, TexUnit textureUnit)]
+  let textures = [(textureUnit,displayTexture)]
+
   forever $ do
-    let color :: Color4 GLfloat = Color4 1 (195 / 255) (160 / 255) 1
-    let backgroundColor :: Color4 GLfloat = Color4 (132 / 255) (132 / 255) (99 / 255) 1
     -- TODO: TEST DATA ONLY!!!!!!!!!!!!!!!!!
     let ram = display chip8 // [(0,True),(displayWidth * displayHeight - 1,True)]
     let textureData :: [Word8] = foldr (\b e -> (if b then 0xff else 0x00) : e) [] ram
@@ -436,21 +416,18 @@ main = do
     let viewportSize = Size (fromIntegral width) (fromIntegral height)
 
     GLFW.pollEvents 
-    currentProgram $= Just program
-    viewport $= (viewportPosition, viewportSize)
+
+    -- BEGIN - update texture data routine
     activeTexture $= TextureUnit textureUnit
     textureBinding Texture2D $= Just displayTexture
     withArray textureData $ \ptr -> do
       let pixelData = PixelData Red UnsignedByte ptr
       texImage2D Texture2D NoProxy 0 R8 size 0 pixelData
-    bindVertexArrayObject $= Just triangles
-    uniform colorLocation $= color
-    uniform backgroundColorLocation $= backgroundColor
-    uniform displayLocation $= textureUnit
+    textureBinding Texture2D $= Nothing
+    -- END -- update texture routine
+
+    viewport $= (viewportPosition, viewportSize)
     clearColor $= Color4 0 0 0 1
     clear [ColorBuffer]
-    drawArrays Triangles 0 3
-    textureBinding Texture2D $= Nothing
-    bindVertexArrayObject $= Nothing
-    currentProgram $= Nothing
+    render program 3 triangles uniforms textures
     GLFW.swapBuffers window
