@@ -345,8 +345,9 @@ main = do
   let chip8 = loadRom rom $ loadFont font $ seed rndSeed
 
   -- Renderer loading and initialization
-  let width = 640
-  let height = 320
+  let windowScaleFactor = 40
+  let width = fromIntegral (displayWidth * windowScaleFactor)
+  let height = fromIntegral (displayHeight * windowScaleFactor)
   True <- GLFW.init
   Just window <- GLFW.createWindow width height "chip8" Nothing Nothing 
   GLFW.defaultWindowHints
@@ -410,41 +411,46 @@ main = do
   vertexAttribArray positionLocation $= Enabled
   bindVertexArrayObject $= Nothing
 
-  -- TODO: TEST DATA ONLY!!!!!!!!!!!!!!!!!
-  let ram = display chip8 // [(0,True),(displayWidth * displayHeight - 1,True)]
-
   -- create texture, bind it, and set essential properties
   let textureUnit :: GLuint = 0
-  let textureData :: [Word8] = foldr (\b e -> (if b then 0xff else 0x00) : e) [] ram
   let size = TextureSize2D (fromIntegral displayWidth) (fromIntegral displayHeight)
+  let filter = ((Nearest, Nothing), Nearest)
+  let wrap = (Repeated, ClampToEdge)
 
-  -- let wrap = (Repeated, ClampToEdge)
   displayTexture <- genObjectName
-  withArray textureData $ \ptr -> do
-    let pixelData = PixelData Red UnsignedByte ptr
-    let filter = ((Nearest, Nothing), Nearest)
-    let wrap = (Repeated, ClampToEdge)
-    texture Texture2D $= Enabled                      
-    activeTexture $= TextureUnit textureUnit
-    textureBinding Texture2D $= Just displayTexture
-    textureFilter Texture2D $= filter
-    textureWrapMode Texture2D S $= wrap
-    textureWrapMode Texture2D T $= wrap
-    texImage2D Texture2D NoProxy 0 R8 size 0 pixelData
-    textureBinding Texture2D $= Nothing
+  texture Texture2D $= Enabled                      
+  activeTexture $= TextureUnit textureUnit
+  textureBinding Texture2D $= Just displayTexture
+  textureFilter Texture2D $= filter
+  textureWrapMode Texture2D S $= wrap
+  textureWrapMode Texture2D T $= wrap
+  textureBinding Texture2D $= Nothing
 
   forever $ do
-    let color :: Color4 GLfloat = Color4 0.42 0.2 1 1
-    let backgroundColor :: Color4 GLfloat = Color4 0.82 0.44 0.24 1
+    let color :: Color4 GLfloat = Color4 1 (195 / 255) (160 / 255) 1
+    let backgroundColor :: Color4 GLfloat = Color4 (132 / 255) (132 / 255) (99 / 255) 1
+    -- TODO: TEST DATA ONLY!!!!!!!!!!!!!!!!!
+    let ram = display chip8 // [(0,True),(displayWidth * displayHeight - 1,True)]
+    let textureData :: [Word8] = foldr (\b e -> (if b then 0xff else 0x00) : e) [] ram
+    let viewportPosition = Position 0 0
+    let viewportSize = Size (fromIntegral width) (fromIntegral height)
+
     GLFW.pollEvents 
     currentProgram $= Just program
-    viewport $= (Position 0 0, Size (fromIntegral width) (fromIntegral height))
-    clearColor $= Color4 0 0 0 1
-    clear [ColorBuffer]
+    viewport $= (viewportPosition, viewportSize)
+    activeTexture $= TextureUnit textureUnit
     textureBinding Texture2D $= Just displayTexture
+    withArray textureData $ \ptr -> do
+      let pixelData = PixelData Red UnsignedByte ptr
+      texImage2D Texture2D NoProxy 0 R8 size 0 pixelData
     bindVertexArrayObject $= Just triangles
     uniform colorLocation $= color
     uniform backgroundColorLocation $= backgroundColor
     uniform displayLocation $= textureUnit
+    clearColor $= Color4 0 0 0 1
+    clear [ColorBuffer]
     drawArrays Triangles 0 3
+    textureBinding Texture2D $= Nothing
+    bindVertexArrayObject $= Nothing
+    currentProgram $= Nothing
     GLFW.swapBuffers window
