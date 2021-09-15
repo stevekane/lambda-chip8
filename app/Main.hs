@@ -6,16 +6,18 @@ import Control.Monad (forever)
 import Data.Bits (shiftL, shiftR, (.&.), (.|.), xor)
 import Data.Word (Word8, Word16, Word32)
 import Data.Array (Array, Ix, array, listArray, assocs, ixmap, (!), (//))
-import System.Random (StdGen, mkStdGen, genWord8)
-
-import qualified Data.ByteString as BS
-import qualified Graphics.UI.GLFW as GLFW
+import System.Random (StdGen, mkStdGen, genWord8, uniformR)
 import Graphics.Rendering.OpenGL
+import Graphics.Rendering.OpenGL.GL.Texturing
 import Foreign.Marshal.Array
 import Foreign.Ptr
 import Foreign.Storable
 
+import qualified Data.ByteString as BS
+import qualified Graphics.UI.GLFW as GLFW
+
 import Lib
+import Data.Dynamic (fromDynamic)
 
 -- Type aliases
 type RAMAddress = Word16
@@ -44,13 +46,6 @@ data Chip8 = Chip8 {
   stack      :: Array StackAddress RAMAddress, -- 16 2-byte adresses
   ram        :: Array RAMAddress Word8         -- 4096 bytes indexed by word16
 } deriving (Show)
-
-{-
-* Clean this up and start adding tests for all the key operations.
-- * Implement drawing algorithm
-- * Add built-in font data as binary loaded into RAM
-- * Read binary data from file and load into RAM as program at 512
--}
 
 -- Constants
 instructionByteWidth = 2
@@ -398,18 +393,14 @@ main = do
   -- TODO: maybe read this data from a file?
   let fullScreenTriangle :: [Vertex2 Float] = [ Vertex2 (-4) (-4), Vertex2 0 4, Vertex2 4 (-4) ]
   let size = fromIntegral (length fullScreenTriangle * sizeOf (head fullScreenTriangle))
-  let loadBuffer size ptr = do bufferData ArrayBuffer $= (size,ptr,StaticDraw)
 
   -- create vertex buffer, bind it, and fill with data
-  -- VAO created and bound
-  -- All subsequent settings apply to this bound VAO
-  -- This VAO being bound is what tells the current program where to 
-  -- find and bind its buffers
   triangles <- genObjectName
   bindVertexArrayObject $= Just triangles
   vertexBuffer <- genObjectName 
   bindBuffer ArrayBuffer $= Just vertexBuffer
-  withArray fullScreenTriangle (loadBuffer size)
+  withArray fullScreenTriangle $ \ptr -> do
+    bufferData ArrayBuffer $= (size,ptr,StaticDraw)
 
   let positionLocation = AttribLocation 0
   let bufferOffset = plusPtr nullPtr 0
@@ -417,20 +408,43 @@ main = do
 
   vertexAttribPointer positionLocation $= (ToFloat, positionDescriptor)
   vertexAttribArray positionLocation $= Enabled
+  bindVertexArrayObject $= Nothing
 
-  -- TODO:
-  --  create uniform vec4 color
-  --  create uniform vec4 backgroundColor
-  --  create uniform texture, populate, and upload to VRAM
+  -- TODO: TEST DATA ONLY!!!!!!!!!!!!!!!!!
+  let ram = display chip8 // [(0,True),(displayWidth * displayHeight - 1,True)]
+
+  -- create texture, bind it, and set essential properties
+  let textureUnit :: GLuint = 0
+  let textureData :: [Word8] = foldr (\b e -> toWord8 b : e) [] ram
+  -- let textureData :: [Word8] = foldr (\b e -> toWord8 b : e) [] (display chip8)
+  let size = TextureSize2D (fromIntegral displayWidth) (fromIntegral displayHeight)
+  let wrap = (Repeated, ClampToEdge)
+  let filter = ((Nearest, Nothing), Nearest)
+  print (fromIntegral displayWidth, fromIntegral displayHeight, length textureData)
+  displayTexture <- genObjectName
+  withArray textureData $ \ptr -> do
+    let pixelData = PixelData Red UnsignedByte ptr
+    texture Texture2D $= Enabled                      
+    activeTexture $= TextureUnit textureUnit
+    textureBinding Texture2D $= Just displayTexture
+    textureFilter Texture2D $= filter
+    textureWrapMode Texture2D S $= wrap
+    textureWrapMode Texture2D T $= wrap
+    texImage2D Texture2D NoProxy 0 R8 size 0 pixelData
+    textureBinding Texture2D $= Nothing
 
   forever $ do
+    let color :: Color4 GLfloat = Color4 0.42 0.2 1 1
+    let backgroundColor :: Color4 GLfloat = Color4 0.82 0.44 0.24 1
     GLFW.pollEvents 
     currentProgram $= Just program
     viewport $= (Position 0 0, Size (fromIntegral width) (fromIntegral height))
     clearColor $= Color4 0 0 0 1
     clear [ColorBuffer]
-    -- TODO: Set uniform values color,backgroundColor
-    -- TODO: upload latest texture data to uniform texture display
+    textureBinding Texture2D $= Just displayTexture
     bindVertexArrayObject $= Just triangles
+    uniform colorLocation $= color
+    uniform backgroundColorLocation $= backgroundColor
+    uniform displayLocation $= textureUnit
     drawArrays Triangles 0 3
     GLFW.swapBuffers window

@@ -9,8 +9,6 @@ in vec2 uv;
 out vec4 fragColor;
 
 void main() {
-  // float weight = texture2D(display, uv).a;
-  // weight = ceil(weight);
-  // fragColor = mix(backgroundColor, color, weight);
-  fragColor = vec4(uv.x,uv.y,0.1,1);
+  float weight = texture(display, uv).r;
+  fragColor = mix(color,backgroundColor,weight);
 }
