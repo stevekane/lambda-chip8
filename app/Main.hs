@@ -415,15 +415,15 @@ main = do
 
   -- create texture, bind it, and set essential properties
   let textureUnit :: GLuint = 0
-  let textureData :: [Word8] = foldr (\b e -> toWord8 b : e) [] ram
-  -- let textureData :: [Word8] = foldr (\b e -> toWord8 b : e) [] (display chip8)
+  let textureData :: [Word8] = foldr (\b e -> (if b then 0xff else 0x00) : e) [] ram
   let size = TextureSize2D (fromIntegral displayWidth) (fromIntegral displayHeight)
-  let wrap = (Repeated, ClampToEdge)
-  let filter = ((Nearest, Nothing), Nearest)
-  print (fromIntegral displayWidth, fromIntegral displayHeight, length textureData)
+
+  -- let wrap = (Repeated, ClampToEdge)
   displayTexture <- genObjectName
   withArray textureData $ \ptr -> do
     let pixelData = PixelData Red UnsignedByte ptr
+    let filter = ((Nearest, Nothing), Nearest)
+    let wrap = (Repeated, ClampToEdge)
     texture Texture2D $= Enabled                      
     activeTexture $= TextureUnit textureUnit
     textureBinding Texture2D $= Just displayTexture
