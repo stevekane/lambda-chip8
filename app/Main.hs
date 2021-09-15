@@ -365,23 +365,13 @@ main = do
   let size = fromIntegral (3 * sizeOf (head vertices))
   let numComponents = 2
   let dataType = Float
-
   vao <- mkVertexArrayObject size numComponents dataType vertices
 
   -- create texture, bind it, and set essential properties
   let textureUnit :: GLuint = 0
-  let size = TextureSize2D (fromIntegral displayWidth) (fromIntegral displayHeight)
-  let filter = ((Nearest, Nothing), Nearest)
+  let filter = (Nearest, Nearest)
   let wrap = (Repeated, ClampToEdge)
-
-  displayTexture <- genObjectName
-  texture Texture2D $= Enabled                      
-  activeTexture $= TextureUnit textureUnit
-  textureBinding Texture2D $= Just displayTexture
-  textureFilter Texture2D $= filter
-  textureWrapMode Texture2D S $= wrap
-  textureWrapMode Texture2D T $= wrap
-  textureBinding Texture2D $= Nothing
+  displayTexture <- mkTexture2D textureUnit filter wrap
 
   -- Setup a program
   vertexShaderCode <- readFile "shaders/screen-vertex.glsl"
@@ -404,6 +394,7 @@ main = do
     let viewportPosition = Position 0 0
     let viewportSize = Size (fromIntegral width) (fromIntegral height)
     let indexCount = 3
+    let size = TextureSize2D (fromIntegral displayWidth) (fromIntegral displayHeight)
 
     GLFW.pollEvents 
 

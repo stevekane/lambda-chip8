@@ -37,6 +37,25 @@ mkVertexArrayObject size numComponents dataType vertices = do
   bindVertexArrayObject $= Nothing
   return vao
 
+mkTexture2D ::
+  GLuint ->
+  (TextureFilter, TextureFilter) ->
+  (Repetition, Clamping) ->
+  IO TextureObject
+mkTexture2D textureUnit (minFilter, maxFilter) wrap = do
+  let filter = ((minFilter, Nothing), maxFilter)
+
+  displayTexture <- genObjectName
+  texture Texture2D $= Enabled                      
+  activeTexture $= TextureUnit textureUnit
+  textureBinding Texture2D $= Just displayTexture
+  textureFilter Texture2D $= filter
+  textureWrapMode Texture2D S $= wrap
+  textureWrapMode Texture2D T $= wrap
+  textureBinding Texture2D $= Nothing
+  return displayTexture
+
+
 mkShaderProgram :: 
   String -> 
   String -> 
