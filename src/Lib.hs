@@ -9,6 +9,10 @@ toWord8 :: Bool -> Word8
 toWord8 True = 0x1
 toWord8 False = 0x0
 
+saturateWord8 :: Bool -> Word8
+saturateWord8 True = 0xFF
+saturateWord8 False = 0x00
+
 digits :: Word8 -> (Word8, Word8, Word8)
 digits b = (hundreds, tens, ones)
   where

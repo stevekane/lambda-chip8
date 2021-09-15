@@ -2,6 +2,9 @@ module Rendering where
 
 import Data.Map (Map(..), empty, insert, lookup)
 import Graphics.Rendering.OpenGL
+import Foreign.Marshal.Array
+import Foreign.Ptr
+import Foreign.Storable
 
 data ShaderProgram
   = Compiled Program
@@ -11,8 +14,33 @@ data UniformSetting
   = Color4Float (Color4 GLfloat)
   | TexUnit GLuint
 
+mkVertexArrayObject :: 
+  Storable a => 
+  GLsizeiptr ->  
+  NumComponents ->
+  DataType ->
+  [a] -> 
+  IO VertexArrayObject
+mkVertexArrayObject size numComponents dataType vertices = do
+  let location = AttribLocation 0
+  let bufferOffset = plusPtr nullPtr 0
+  let descriptor = VertexArrayDescriptor numComponents dataType 0 bufferOffset
 
-mkShaderProgram :: String -> String -> IO ShaderProgram
+  vao <- genObjectName
+  vertexBuffer <- genObjectName 
+  bindVertexArrayObject $= Just vao
+  bindBuffer ArrayBuffer $= Just vertexBuffer
+  withArray vertices $ \ptr -> do
+    bufferData ArrayBuffer $= (size,ptr,StaticDraw)
+  vertexAttribPointer location $= (ToFloat, descriptor)
+  vertexAttribArray location $= Enabled
+  bindVertexArrayObject $= Nothing
+  return vao
+
+mkShaderProgram :: 
+  String -> 
+  String -> 
+  IO ShaderProgram
 mkShaderProgram vertexShaderSrc fragmentShaderSrc = do
   vertexShader <- createShader VertexShader
   shaderSourceBS vertexShader $= packUtf8 vertexShaderSrc
@@ -37,12 +65,13 @@ mkShaderProgram vertexShaderSrc fragmentShaderSrc = do
     then return (Compiled program)
     else return (Uncompiled vertexShaderInfo fragmentShaderInfo programInfo)
 
-render :: Program -> 
-          NumArrayIndices -> 
-          VertexArrayObject -> 
-          [(UniformLocation,UniformSetting)] -> 
-          [(GLuint,TextureObject)] ->
-          IO()
+render :: 
+  Program -> 
+  NumArrayIndices -> 
+  VertexArrayObject -> 
+  [(UniformLocation,UniformSetting)] -> 
+  [(GLuint,TextureObject)] ->
+  IO()
 render program count vao uniforms textures = do
   currentProgram $= Just program
   bindVertexArrayObject $= Just vao

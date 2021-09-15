@@ -358,26 +358,15 @@ main = do
   -- GLFW.setKeyCallback window (Just onKeyPressed)
   -- GLFW.setWindowCloseCallback window (Just onShutown)
 
-  -- Store attribute locations
-  -- TODO: maybe read this data from a file?
-  let fullScreenTriangle :: [Vertex2 Float] = [ Vertex2 (-4) (-4), Vertex2 0 4, Vertex2 4 (-4) ]
-  let size = fromIntegral (length fullScreenTriangle * sizeOf (head fullScreenTriangle))
+  -- setup vertex array buffer object containing geometry for full-screen triangle
+  let vertices :: [Vertex2 Float] = [ Vertex2 (-4) (-4), 
+                                      Vertex2 0 4, 
+                                      Vertex2 4 (-4) ]
+  let size = fromIntegral (3 * sizeOf (head vertices))
+  let numComponents = 2
+  let dataType = Float
 
-  -- create vertex buffer, bind it, and fill with data
-  triangles <- genObjectName
-  bindVertexArrayObject $= Just triangles
-  vertexBuffer <- genObjectName 
-  bindBuffer ArrayBuffer $= Just vertexBuffer
-  withArray fullScreenTriangle $ \ptr -> do
-    bufferData ArrayBuffer $= (size,ptr,StaticDraw)
-
-  let positionLocation = AttribLocation 0
-  let bufferOffset = plusPtr nullPtr 0
-  let positionDescriptor = VertexArrayDescriptor 2 Float 0 bufferOffset
-
-  vertexAttribPointer positionLocation $= (ToFloat, positionDescriptor)
-  vertexAttribArray positionLocation $= Enabled
-  bindVertexArrayObject $= Nothing
+  vao <- mkVertexArrayObject size numComponents dataType vertices
 
   -- create texture, bind it, and set essential properties
   let textureUnit :: GLuint = 0
@@ -411,9 +400,10 @@ main = do
   forever $ do
     -- TODO: TEST DATA ONLY!!!!!!!!!!!!!!!!!
     let ram = display chip8 // [(0,True),(displayWidth * displayHeight - 1,True)]
-    let textureData :: [Word8] = foldr (\b e -> (if b then 0xff else 0x00) : e) [] ram
+    let textureData :: [Word8] = foldr (\b e -> saturateWord8 b : e) [] ram
     let viewportPosition = Position 0 0
     let viewportSize = Size (fromIntegral width) (fromIntegral height)
+    let indexCount = 3
 
     GLFW.pollEvents 
 
@@ -429,5 +419,5 @@ main = do
     viewport $= (viewportPosition, viewportSize)
     clearColor $= Color4 0 0 0 1
     clear [ColorBuffer]
-    render program 3 triangles uniforms textures
+    render program indexCount vao uniforms textures
     GLFW.swapBuffers window
