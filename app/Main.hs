@@ -3,6 +3,7 @@
 module Main where
 
 import Control.Monad (forever)
+import Control.Monad.State
 import Data.Bits (shiftL, shiftR, (.&.), (.|.), xor)
 import Data.Word (Word8, Word16, Word32)
 import Data.Array (Array, Ix, array, listArray, assocs, ixmap, (!), (//))
@@ -330,38 +331,73 @@ execute (a,x,y,n) cpu = case (a,x,y,n) of
   nnn = word16FromNibbles x y n
   nn = word8FromNibbles y n
 
--- TODO: do i need this? need to define all callbacks for GLFW
+printError :: GLFW.ErrorCallback
 printError e s = putStrLn $ unwords [show e, show s]
+
+onRefresh :: GLFW.WindowRefreshCallback
+onRefresh e = putStrLn "refresh"
+
+onResize :: GLFW.FramebufferSizeCallback
+onResize e w h = do
+  putStrLn $ "width:" ++ show w ++ " | height:" ++ show h
+  let viewportPosition = Position 0 0
+  let viewportSize = Size (fromIntegral w) (fromIntegral h)
+  viewport $= (viewportPosition, viewportSize)
+
+
+onKeyPressed :: GLFW.KeyCallback
+onKeyPressed w key num state modifiers = putStrLn "keydown"
+
+onShutdown :: GLFW.WindowCloseCallback
+onShutdown e = putStrLn "shutdown"
+
+updateLoop :: RenderContext -> Int -> Chip8 -> IO ()
+updateLoop ctx count cpu = do
+  let ram = display cpu // [(0,on),(displayWidth * displayHeight - 1,on)]
+  let textureData :: [Word8] = foldr (\b e -> saturateWord8 b : e) [] ram
+  let textureSize = TextureSize2D (fromIntegral displayWidth) (fromIntegral displayHeight)
+  let textureFormats = (R8, Red, UnsignedByte)
+  let program = displayProgram ctx
+  let uniforms = displayUniforms ctx 
+  let textures = displayTextures ctx
+  let writeableTexture = snd (head textures)
+  uploadTexture2D writeableTexture textureSize textureFormats textureData
+
+  let clearedColor = Color4 0 0 0 1
+  clearColor $= clearedColor
+  clear [ColorBuffer]
+  
+  let indexCount = 3
+  render program indexCount (vao ctx) uniforms textures 
+
+  GLFW.pollEvents
+  GLFW.swapBuffers (window ctx)
+  updateLoop ctx (count + 1) cpu
 
 main :: IO ()
 main = do
-  -- Emulator loading and initialization
-  fontBinary <- BS.readFile "fonts/default-font.bin"
-  ibmLogoBinary <- BS.readFile "roms/IBM-logo.bin"
-
-  let rndSeed = mkStdGen 10
-  let font = toArray fontBinary
-  let rom = toArray ibmLogoBinary
-  let chip8 = loadRom rom $ loadFont font $ seed rndSeed
-
   -- Renderer loading and initialization
-  let windowScaleFactor = 40
+  let windowScaleFactor = 20
   let width = fromIntegral (displayWidth * windowScaleFactor)
   let height = fromIntegral (displayHeight * windowScaleFactor)
+  let viewportPosition = Position 0 0
+  let viewportSize = Size (fromIntegral width) (fromIntegral height)
   True <- GLFW.init
   Just window <- GLFW.createWindow width height "chip8" Nothing Nothing 
+  viewport $= (viewportPosition,viewportSize)
   GLFW.defaultWindowHints
   GLFW.setErrorCallback (Just printError)
   GLFW.makeContextCurrent (Just window)
-  -- GLFW.setWindowRefreshCallback window (Just onRefresh)
-  -- GLFW.setFramebufferSizeCallback window (Just onResize)
-  -- GLFW.setKeyCallback window (Just onKeyPressed)
-  -- GLFW.setWindowCloseCallback window (Just onShutown)
+  GLFW.setWindowRefreshCallback window (Just onRefresh)
+  GLFW.setFramebufferSizeCallback window (Just onResize)
+  GLFW.setKeyCallback window (Just onKeyPressed)
+  GLFW.setWindowCloseCallback window (Just onShutdown)
 
   -- setup vertex array buffer object containing geometry for full-screen triangle
-  let vertices :: [Vertex2 Float] = [ Vertex2 (-4) (-4), 
-                                      Vertex2 0 4, 
-                                      Vertex2 4 (-4) ]
+  let v0 :: Vertex2 Float = Vertex2 (-4) (-4)
+  let v1 :: Vertex2 Float = Vertex2 0  4
+  let v2 :: Vertex2 Float = Vertex2 4 (-4)
+  let vertices = [ v0, v1, v2 ]
   let size = fromIntegral (3 * sizeOf (head vertices))
   let numComponents = 2
   let dataType = Float
@@ -378,37 +414,27 @@ main = do
   fragmentShaderCode <- readFile "shaders/screen-fragment.glsl"
   Compiled program <- mkShaderProgram vertexShaderCode fragmentShaderCode
   colorLocation <- uniformLocation program "color"
-  backgroundColorLocation <- uniformLocation program "backgroundColor"
+  bgLocation <- uniformLocation program "bgcolor"
   displayLocation <- uniformLocation program "display"
-  let color = Color4 1 (195 / 255) (160 / 255) 1
-  let backgroundColor = Color4 (132 / 255) (132 / 255) (99 / 255) 1
-  let uniforms = [(colorLocation, Color4Float color),
-                  (backgroundColorLocation, Color4Float backgroundColor),
-                  (displayLocation, TexUnit textureUnit)]
+  let color = Color4Float (Color4 1 (195 / 255) (160 / 255) 1)
+  let bgcolor = Color4Float (Color4 (132 / 255) (132 / 255) (99 / 255) 1)
+  let txUnit = TexUnit textureUnit
+  let uniforms = [(colorLocation,color), (bgLocation,bgcolor), (displayLocation,txUnit)]
   let textures = [(textureUnit,displayTexture)]
+  let ctx = RenderContext {
+    window = window,
+    vao = vao,
+    displayProgram = program,
+    displayUniforms = uniforms,
+    displayTextures = textures 
+  }
 
-  forever $ do
-    -- TODO: TEST DATA ONLY!!!!!!!!!!!!!!!!!
-    let ram = display chip8 // [(0,True),(displayWidth * displayHeight - 1,True)]
-    let textureData :: [Word8] = foldr (\b e -> saturateWord8 b : e) [] ram
-    let viewportPosition = Position 0 0
-    let viewportSize = Size (fromIntegral width) (fromIntegral height)
-    let indexCount = 3
-    let size = TextureSize2D (fromIntegral displayWidth) (fromIntegral displayHeight)
+  -- Emulator loading and initialization
+  fontBinary <- BS.readFile "fonts/default-font.bin"
+  ibmLogoBinary <- BS.readFile "roms/IBM-logo.bin"
 
-    GLFW.pollEvents 
-
-    -- BEGIN - update texture data routine
-    activeTexture $= TextureUnit textureUnit
-    textureBinding Texture2D $= Just displayTexture
-    withArray textureData $ \ptr -> do
-      let pixelData = PixelData Red UnsignedByte ptr
-      texImage2D Texture2D NoProxy 0 R8 size 0 pixelData
-    textureBinding Texture2D $= Nothing
-    -- END -- update texture routine
-
-    viewport $= (viewportPosition, viewportSize)
-    clearColor $= Color4 0 0 0 1
-    clear [ColorBuffer]
-    render program indexCount vao uniforms textures
-    GLFW.swapBuffers window
+  let rndSeed = mkStdGen 10
+  let font = toArray fontBinary
+  let rom = toArray ibmLogoBinary
+  let chip8 = loadRom rom $ loadFont font $ seed rndSeed
+  updateLoop ctx 0 chip8

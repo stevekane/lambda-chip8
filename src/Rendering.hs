@@ -1,18 +1,28 @@
 module Rendering where
 
-import Data.Map (Map(..), empty, insert, lookup)
+import Graphics.UI.GLFW (Window)
 import Graphics.Rendering.OpenGL
 import Foreign.Marshal.Array
 import Foreign.Ptr
 import Foreign.Storable
 
+data RenderContext = RenderContext {
+  window          :: Window,
+  vao             :: VertexArrayObject,
+  displayProgram  :: Program,
+  displayUniforms :: [(UniformLocation,UniformSetting)],
+  displayTextures :: [(GLuint,TextureObject)]
+}
+
 data ShaderProgram
   = Compiled Program
   | Uncompiled String String String
+  deriving (Show)
 
 data UniformSetting
   = Color4Float (Color4 GLfloat)
   | TexUnit GLuint
+  deriving (Show)
 
 mkVertexArrayObject :: 
   Storable a => 
@@ -55,6 +65,19 @@ mkTexture2D textureUnit (minFilter, maxFilter) wrap = do
   textureBinding Texture2D $= Nothing
   return displayTexture
 
+uploadTexture2D ::
+  Storable a =>
+  TextureObject ->
+  TextureSize2D ->
+  (PixelInternalFormat, PixelFormat, DataType) ->
+  [a] ->
+  IO ()
+uploadTexture2D tx size (internalFormat, pixelFormat, dataType) textureData = do
+  textureBinding Texture2D $= Just tx
+  withArray textureData $ \ptr -> do
+    let pixelData = PixelData pixelFormat dataType ptr
+    texImage2D Texture2D NoProxy 0 internalFormat size 0 pixelData
+  textureBinding Texture2D $= Nothing
 
 mkShaderProgram :: 
   String -> 
