@@ -43,6 +43,17 @@ data Chip8 = Chip8 {
   ram        :: Array RAMAddress Word8
 } deriving (Show)
 
+-- A little check-list
+--   Render IBM Logo
+--      Fix pixel rendering bug where sprites are flipped on the x-axis
+--   Render test program
+--      Fix any failing opcodes
+--   Render trip-8 demo
+--      Tick the updates at a specific clock-frequency
+--      Set the values of the two timers based on their ticking frequency
+--   Render breakout game
+--      Setup input-handling code that converts raw inputs to input bits on the CPU
+
 -- Constants
 instructionByteWidth = 2
 displayWidth = 64
@@ -60,7 +71,13 @@ skipIf pc False = pc + instructionByteWidth
 blockIf pc True = pc
 blockIf pc False = pc + instructionByteWidth
 
-pixelFromRam offset (x,y) cpu = nthbit x (ram cpu ! (offset + y))
+pixelFromRam offset (x,y) cpu = nthbit bitIndex (ram cpu ! byteIndex)
+  where 
+    bitsPerPixel = 8 
+    bytesPerSprite = 8 
+    index1D = x + bytesPerSprite * y
+    byteIndex = index1D `div` bitsPerPixel + offset
+    bitIndex = 7 - index1D `mod` bitsPerPixel
 
 pixelFromDisplay offset (x,y) cpu = display cpu ! to1DIndex displayWidth (x,y)
 
@@ -345,28 +362,10 @@ onKeyPressed w key num state modifiers = putStrLn "keydown"
 onShutdown :: GLFW.WindowCloseCallback
 onShutdown e = putStrLn "shutdown"
 
--- Screen setup
---  00E0 clear
-
--- Set pointer into memory for sprites
---    A22A set I to 0x22A 
--- Set initial values for registers
---    600C set v[0] to 0x0C
---    6108 set v[1] to 0x08
--- Draw sprite at xy of height 15
---    D01E
--- Add to value in register 0 to shift position
---    7009
--- Update pointer into memory for sprite
---    A239
--- Render
---    D01E
--- Repeat...
-
 -- TODO: ALERT!!!!!!!!!!!!!!!!!! 
 -- If you review the image you sent people, you'll see that each sprite
 -- is being drawn as a mirror image of what is intended. The I happens to
--- look correct because it's a completely x-axis symmetrical sprite.
+-- look correct because it's a completel x-axis symmetrical sprite.
 -- look into this in the morning as the root cause is probably somewhere
 -- in the indexing into the pixels code or whatever.
 updateLoop :: RenderContext -> Int -> Chip8 -> IO ()
@@ -389,10 +388,11 @@ updateLoop ctx count cpu = do
   
   let indexCount = 3
   render program indexCount (vao ctx) uniforms textures 
-
   GLFW.pollEvents
   GLFW.swapBuffers (window ctx)
   updateLoop ctx (count + 1) cpu'
+
+-- g . f ∈ Hom(A,A)
 
 main :: IO ()
 main = do
@@ -436,8 +436,8 @@ main = do
   colorLocation <- uniformLocation program "color"
   bgLocation <- uniformLocation program "bgcolor"
   displayLocation <- uniformLocation program "display"
-  let color = Color4Float (Color4 1 (195 / 255) (160 / 255) 1)
-  let bgcolor = Color4Float (Color4 (132 / 255) (132 / 255) (99 / 255) 1)
+  let color = Color4Float (Color4 1 (165 / 255) 0 1)
+  let bgcolor = Color4Float (Color4 (87 / 255) (102 / 255) (117 / 255) 1)
   let txUnit = TexUnit textureUnit
   let uniforms = [(colorLocation,color), (bgLocation,bgcolor), (displayLocation,txUnit)]
   let textures = [(textureUnit,displayTexture)]
@@ -457,9 +457,4 @@ main = do
   let font = toArray fontBinary
   let rom = toArray ibmLogoBinary
   let chip8 = loadRom rom $ loadFont font $ seed rndSeed
-  let (w,h) = (8,15)
-  let (xMin,yMin) = wrap (64,32) (12,8)
-  let (xMax,yMax) = bound (displayWidth,displayHeight) (w,h) (xMin,yMin)
-
-  print ((w,h),(xMin,yMin),(xMax,yMax))
   updateLoop ctx 0 chip8
