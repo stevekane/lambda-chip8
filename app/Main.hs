@@ -177,6 +177,26 @@ clearDisplay cpu = cpu {
   display = blankDisplay
 }
 
+-- Test drawing while ignoring collision and overflow/wrapping concerns.
+-- vx vy are starting coordinates to draw to.
+-- 
+drawSimple :: Word8 -> Word8 -> Word8 -> Chip8 -> Chip8
+drawSimple vx vy n cpu = cpu {
+  pc = step (pc cpu),
+  display = display cpu // pixels
+} where
+  -- loop over each pixel
+  (x0,y0) = (word32 vx, word32 vy)
+  (w,h)   = (8,word32 n)
+  offsets = [0..(w-1)] × [0..(h-1)]
+  ramOffset = i cpu
+  pixels = fmap writePixel offsets
+  writePixel (i,j) = (index,pixel)
+    where
+      (x,y) = (x0 + i, y0 + j)
+      index = y * displayWidth + x
+      pixel = nthbit (7 - i) (ram cpu ! (ramOffset + word16 j))
+
 drawSpriteAtIToVxVyNHigh vx vy n cpu = cpu {  
   pc = step (pc cpu),
   display = display cpu // pixels,
@@ -315,7 +335,8 @@ execute (a,x,y,n) cpu = case (a,x,y,n) of
   (0x8, _, _, 0xE)     -> leftShiftVxAndStoreMSBVx x vx cpu
   (0xC, _, _, _)       -> setVxToRandAndNN x nn cpu
   (0x0,0x0,0xE,0x0)    -> clearDisplay cpu
-  (0xD, _, _, _)       -> drawSpriteAtIToVxVyNHigh vx vy n cpu
+  -- (0xD, _, _, _)       -> drawSpriteAtIToVxVyNHigh vx vy n cpu
+  (0xD, _, _, _)       -> drawSimple vx vy n cpu
   (0xA, _, _, _)       -> setIToNNN nnn cpu
   (0xF, _, 0x1, 0xE)   -> setIToIPlusVx vx cpu
   (0xF, _, 0x2, 0x9)   -> setIToISpriteAddressVx vx cpu
@@ -452,7 +473,7 @@ main = do
 
   let rndSeed = mkStdGen 10
   let font = toArray fontBinary
-  --let rom = toArray testOpcodeBinary 
-  let rom = toArray ibmLogoBinary 
+  let rom = toArray testOpcodeBinary 
+  -- let rom = toArray ibmLogoBinary 
   let chip8 = loadRom rom $ loadFont font $ seed rndSeed
   updateLoop ctx 0 chip8
