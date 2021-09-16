@@ -10,9 +10,6 @@ import Data.Array (Array, Ix, array, listArray, assocs, ixmap, (!), (//))
 import System.Random (StdGen, mkStdGen, genWord8, uniformR)
 import Graphics.Rendering.OpenGL
 import Graphics.Rendering.OpenGL.GL.Texturing
-import Foreign.Marshal.Array
-import Foreign.Ptr
-import Foreign.Storable
 
 import qualified Data.ByteString as BS
 import qualified Graphics.UI.GLFW as GLFW
@@ -398,7 +395,7 @@ main = do
   let v1 :: Vertex2 Float = Vertex2 0  4
   let v2 :: Vertex2 Float = Vertex2 4 (-4)
   let vertices = [ v0, v1, v2 ]
-  let size = fromIntegral (3 * sizeOf (head vertices))
+  let size = fromIntegral (3 * 32)
   let numComponents = 2
   let dataType = Float
   vao <- mkVertexArrayObject size numComponents dataType vertices
