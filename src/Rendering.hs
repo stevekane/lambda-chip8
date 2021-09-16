@@ -42,15 +42,10 @@ mkVertexArrayObject size numComponents dataType vertices = do
   bindBuffer ArrayBuffer $= Just vertexBuffer
   withArray vertices $ \ptr -> do
     bufferData ArrayBuffer $= (size,ptr,StaticDraw)
-  vertexAttribPointer location $= (ToFloat, descriptor)
+  vertexAttribPointer location $= (ToFloat,descriptor)
   vertexAttribArray location $= Enabled
   bindVertexArrayObject $= Nothing
   return vao
-
--- TODO: for completeness, uniformity we could implement the facility
--- to setup values for a uniform block binding. This would sort of 
--- echo our choice to use a vertexArrayObject and make the abstraction
--- level a bit more ... uniform.
 
 mkTexture2D ::
   GLuint ->

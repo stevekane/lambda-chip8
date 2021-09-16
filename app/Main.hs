@@ -357,8 +357,13 @@ execute (a,x,y,n) cpu = case (a,x,y,n) of
   nnn = word16FromNibbles x y n
   nn = word8FromNibbles y n
 
-printError :: GLFW.ErrorCallback
-printError e s = putStrLn $ unwords [show e, show s]
+-- 2242 - 2NNN -> call subroutine NNN
+-- A202 - ANNN -> set I to NNN
+-- DAB4 - DXYN -> drawSimple 
+-- 00EE - 00EE -> return from subroutine
+
+onError :: GLFW.ErrorCallback
+onError e s = putStrLn $ unwords [show e, show s]
 
 onRefresh :: GLFW.WindowRefreshCallback
 onRefresh e = putStrLn "refresh"
@@ -370,19 +375,12 @@ onResize e w h = do
   let viewportSize = Size (fromIntegral w) (fromIntegral h)
   viewport $= (viewportPosition, viewportSize)
 
-
 onKeyPressed :: GLFW.KeyCallback
 onKeyPressed w key num state modifiers = putStrLn "keydown"
 
 onShutdown :: GLFW.WindowCloseCallback
 onShutdown e = putStrLn "shutdown"
 
--- TODO: ALERT!!!!!!!!!!!!!!!!!! 
--- If you review the image you sent people, you'll see that each sprite
--- is being drawn as a mirror image of what is intended. The I happens to
--- look correct because it's a completel x-axis symmetrical sprite.
--- look into this in the morning as the root cause is probably somewhere
--- in the indexing into the pixels code or whatever.
 updateLoop :: RenderContext -> Int -> Chip8 -> IO ()
 updateLoop ctx count cpu = do
   let nibbles = fetch cpu
@@ -410,8 +408,6 @@ updateLoop ctx count cpu = do
   GLFW.swapBuffers (window ctx)
   updateLoop ctx (count + 1) cpu'
 
--- g . f ∈ Hom(A,A)
-
 main :: IO ()
 main = do
   -- Renderer loading and initialization
@@ -424,7 +420,7 @@ main = do
   Just window <- GLFW.createWindow width height "chip8" Nothing Nothing 
   viewport $= (viewportPosition,viewportSize)
   GLFW.defaultWindowHints
-  GLFW.setErrorCallback (Just printError)
+  GLFW.setErrorCallback (Just onError)
   GLFW.makeContextCurrent (Just window)
   GLFW.setWindowRefreshCallback window (Just onRefresh)
   GLFW.setFramebufferSizeCallback window (Just onResize)
