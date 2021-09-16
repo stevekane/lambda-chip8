@@ -74,7 +74,10 @@ wrap :: (Integral a, Integral b) => (a,b) -> (a,b) -> (a,b)
 wrap (w,h) (x,y) = (mod x w, mod y h)
 
 bound :: (Integral a, Integral b) => (a,b) -> (a,b) -> (a,b) -> (a,b)
-bound (xMax,yMax) (w,h) (x,y) = (max (x + w) xMax - 1, max (y + h) yMax - 1)
+bound (xMax,yMax) (w,h) (x,y) = (xBound,yBound) 
+  where
+    xBound = min (x + w) xMax - 1
+    yBound = min (y + h) yMax - 1
 
 showColumns :: (Ix i, Integral i, Show a) => i -> i -> Array i a -> String
 showColumns c p a = foldr render "" (assocs a)

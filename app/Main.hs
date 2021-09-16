@@ -2,8 +2,6 @@
 
 module Main where
 
-import Control.Monad (forever)
-import Control.Monad.State
 import Data.Bits (shiftL, shiftR, (.&.), (.|.), xor)
 import Data.Word (Word8, Word16, Word32)
 import Data.Array (Array, Ix, array, listArray, assocs, ixmap, (!), (//))
@@ -311,7 +309,7 @@ execute (a,x,y,n) cpu = case (a,x,y,n) of
   (0xF, _, 0x1, 0xE)   -> setIToIPlusVx vx cpu
   (0xF, _, 0x2, 0x9)   -> setIToISpriteAddressVx vx cpu
   (0xF, _, 0x3, 0x3)   -> storeBCDVxAtI vx cpu
-  (0xF, _, 0x5, 0x5)   -> dumpRegistersV0ToVxToI x cpu
+  (0xF, _, 0x5, 0x5)   -> dumpRegistersV0ToVxToI (fromIntegral x) cpu
   (0xF, _, 0x6, 0x5)   -> loadRegistersV0ToVxFromI x cpu
   (0xF, _, 0x0, 0x7)   -> setVxToD x cpu
   (0xF, _, 0x1, 0x5)   -> setDToVx vx cpu
@@ -321,7 +319,6 @@ execute (a,x,y,n) cpu = case (a,x,y,n) of
   (0xF, _, 0x0, 0xA)   -> blockUnlessKeyDownVx vx cpu
   _                    -> cpu
   where 
-  x = x
   vx = registers cpu ! x
   vy = registers cpu ! y
   v0 = registers cpu ! 0x0
@@ -348,9 +345,35 @@ onKeyPressed w key num state modifiers = putStrLn "keydown"
 onShutdown :: GLFW.WindowCloseCallback
 onShutdown e = putStrLn "shutdown"
 
+-- Screen setup
+--  00E0 clear
+
+-- Set pointer into memory for sprites
+--    A22A set I to 0x22A 
+-- Set initial values for registers
+--    600C set v[0] to 0x0C
+--    6108 set v[1] to 0x08
+-- Draw sprite at xy of height 15
+--    D01E
+-- Add to value in register 0 to shift position
+--    7009
+-- Update pointer into memory for sprite
+--    A239
+-- Render
+--    D01E
+-- Repeat...
+
+-- TODO: ALERT!!!!!!!!!!!!!!!!!! 
+-- If you review the image you sent people, you'll see that each sprite
+-- is being drawn as a mirror image of what is intended. The I happens to
+-- look correct because it's a completely x-axis symmetrical sprite.
+-- look into this in the morning as the root cause is probably somewhere
+-- in the indexing into the pixels code or whatever.
 updateLoop :: RenderContext -> Int -> Chip8 -> IO ()
 updateLoop ctx count cpu = do
-  let ram = display cpu // [(0,on),(displayWidth * displayHeight - 1,on)]
+  let nibbles = fetch cpu
+  let cpu' = execute nibbles cpu
+  let ram = display cpu'
   let textureData :: [Word8] = foldr (\b e -> saturateWord8 b : e) [] ram
   let textureSize = TextureSize2D (fromIntegral displayWidth) (fromIntegral displayHeight)
   let textureFormats = (R8, Red, UnsignedByte)
@@ -369,7 +392,7 @@ updateLoop ctx count cpu = do
 
   GLFW.pollEvents
   GLFW.swapBuffers (window ctx)
-  updateLoop ctx (count + 1) cpu
+  updateLoop ctx (count + 1) cpu'
 
 main :: IO ()
 main = do
@@ -403,8 +426,8 @@ main = do
   -- create texture, bind it, and set essential properties
   let textureUnit :: GLuint = 0
   let filter = (Nearest, Nearest)
-  let wrap = (Repeated, ClampToEdge)
-  displayTexture <- mkTexture2D textureUnit filter wrap
+  let wrapping = (Repeated, ClampToEdge)
+  displayTexture <- mkTexture2D textureUnit filter wrapping
 
   -- Setup a program
   vertexShaderCode <- readFile "shaders/screen-vertex.glsl"
@@ -434,4 +457,9 @@ main = do
   let font = toArray fontBinary
   let rom = toArray ibmLogoBinary
   let chip8 = loadRom rom $ loadFont font $ seed rndSeed
+  let (w,h) = (8,15)
+  let (xMin,yMin) = wrap (64,32) (12,8)
+  let (xMax,yMax) = bound (displayWidth,displayHeight) (w,h) (xMin,yMin)
+
+  print ((w,h),(xMin,yMin),(xMax,yMax))
   updateLoop ctx 0 chip8
