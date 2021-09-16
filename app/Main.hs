@@ -83,7 +83,7 @@ callSubroutineAtNNN nnn cpu = cpu {
 }
 
 returnFromSubroutine cpu = cpu { 
-  pc = stack cpu ! sp cpu,
+  pc = stack cpu ! (sp cpu - 1),
   sp = sp cpu - 1
 }
 
@@ -349,7 +349,7 @@ execute (a,x,y,n) cpu = case (a,x,y,n) of
   (0xE, _, 0x9, 0xE)   -> skipIfKeyDownVx vx cpu
   (0xE, _, 0xA, 0x1)   -> skipUnlessKeyDownVx vx cpu
   (0xF, _, 0x0, 0xA)   -> blockUnlessKeyDownVx vx cpu
-  _                    -> cpu
+  _                    -> error $ "unknown opcode: " ++ show (a,x,y,n)
   where 
   vx = registers cpu ! x
   vy = registers cpu ! y
@@ -402,6 +402,7 @@ updateLoop ctx count cpu = do
   clear [ColorBuffer]
 
   -- putStrLn $ showDisplay 64 32 (display cpu')
+  print nibbles
   
   let indexCount = 3
   render program indexCount (vao ctx) uniforms textures 
