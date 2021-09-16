@@ -44,10 +44,6 @@ data Chip8 = Chip8 {
 } deriving (Show)
 
 -- A little check-list
---   Render IBM Logo
---      Fix pixel rendering bug where sprites are flipped on the x-axis
---   Render test program
---      Fix any failing opcodes
 --   Render trip-8 demo
 --      Tick the updates at a specific clock-frequency
 --      Set the values of the two timers based on their ticking frequency
@@ -79,7 +75,7 @@ pixelFromDisplay offset (x,y) cpu = display cpu ! to1DIndex displayWidth (x,y)
 callSubroutineAtNNN nnn cpu = cpu { 
   pc = nnn, 
   sp = sp cpu + 1,
-  stack = stack cpu // [(sp cpu,pc cpu)]
+  stack = stack cpu // [(sp cpu,step(pc cpu))]
 }
 
 returnFromSubroutine cpu = cpu { 
@@ -177,15 +173,11 @@ clearDisplay cpu = cpu {
   display = blankDisplay
 }
 
--- Test drawing while ignoring collision and overflow/wrapping concerns.
--- vx vy are starting coordinates to draw to.
--- 
 drawSimple :: Word8 -> Word8 -> Word8 -> Chip8 -> Chip8
 drawSimple vx vy n cpu = cpu {
   pc = step (pc cpu),
   display = display cpu // pixels
 } where
-  -- loop over each pixel
   (x0,y0) = (word32 vx, word32 vy)
   (w,h)   = (8,word32 n)
   offsets = [0..(w-1)] × [0..(h-1)]
@@ -357,11 +349,6 @@ execute (a,x,y,n) cpu = case (a,x,y,n) of
   nnn = word16FromNibbles x y n
   nn = word8FromNibbles y n
 
--- 2242 - 2NNN -> call subroutine NNN
--- A202 - ANNN -> set I to NNN
--- DAB4 - DXYN -> drawSimple 
--- 00EE - 00EE -> return from subroutine
-
 onError :: GLFW.ErrorCallback
 onError e s = putStrLn $ unwords [show e, show s]
 
@@ -399,9 +386,6 @@ updateLoop ctx count cpu = do
   clearColor $= clearedColor
   clear [ColorBuffer]
 
-  -- putStrLn $ showDisplay 64 32 (display cpu')
-  print nibbles
-  
   let indexCount = 3
   render program indexCount (vao ctx) uniforms textures 
   GLFW.pollEvents
