@@ -71,13 +71,7 @@ skipIf pc False = pc + instructionByteWidth
 blockIf pc True = pc
 blockIf pc False = pc + instructionByteWidth
 
-pixelFromRam offset (x,y) cpu = nthbit bitIndex (ram cpu ! byteIndex)
-  where 
-    bitsPerPixel = 8 
-    bytesPerSprite = 8 
-    index1D = x + bytesPerSprite * y
-    byteIndex = index1D `div` bitsPerPixel + offset
-    bitIndex = 7 - index1D `mod` bitsPerPixel
+pixelFromRam offset (x,y) cpu = nthbit (7 - x) (ram cpu ! (y + offset))
 
 pixelFromDisplay offset (x,y) cpu = display cpu ! to1DIndex displayWidth (x,y)
 
@@ -385,6 +379,8 @@ updateLoop ctx count cpu = do
   let clearedColor = Color4 0 0 0 1
   clearColor $= clearedColor
   clear [ColorBuffer]
+
+  -- putStrLn $ showDisplay 64 32 (display cpu')
   
   let indexCount = 3
   render program indexCount (vao ctx) uniforms textures 
@@ -452,9 +448,11 @@ main = do
   -- Emulator loading and initialization
   fontBinary <- BS.readFile "fonts/default-font.bin"
   ibmLogoBinary <- BS.readFile "roms/IBM-logo.bin"
+  testOpcodeBinary <- BS.readFile "roms/test-opcode.bin"
 
   let rndSeed = mkStdGen 10
   let font = toArray fontBinary
-  let rom = toArray ibmLogoBinary
+  --let rom = toArray testOpcodeBinary 
+  let rom = toArray ibmLogoBinary 
   let chip8 = loadRom rom $ loadFont font $ seed rndSeed
   updateLoop ctx 0 chip8
