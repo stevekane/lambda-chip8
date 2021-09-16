@@ -5,7 +5,7 @@ module Main where
 import Data.Bits (shiftL, shiftR, (.&.), (.|.), xor)
 import Data.Word (Word8, Word16, Word32)
 import Data.Array (Array, Ix, array, listArray, assocs, ixmap, (!), (//))
-import System.Random (StdGen, mkStdGen, genWord8, uniformR)
+import System.Random (StdGen, mkStdGen, genWord8)
 import Graphics.Rendering.OpenGL
 import Graphics.Rendering.OpenGL.GL.Texturing
 
@@ -15,7 +15,6 @@ import qualified Graphics.UI.GLFW as GLFW
 import Lib
 import Rendering
 
--- Type aliases
 type RAMAddress = Word16
 type StackAddress = Word8
 type RegisterAddress = Word8
@@ -28,54 +27,26 @@ type Font = Array RAMAddress Word8
 type Nibbles = (Word8, Word8, Word8, Word8)
 type OpCode = (Word8, Word8, Word8, Word8, Word8, Word8, Word16)
 
--- Model for Chip8 CPU
 data Chip8 = Chip8 {
-  randomSeed :: StdGen,
-  display    :: Array DisplayAddress Pixel,
-  inputs     :: Array Word8 InputState,
-  d          :: Word8,
-  s          :: Word8,
-  pc         :: RAMAddress,
-  sp         :: StackAddress,
-  i          :: RAMAddress,
-  registers  :: Array RegisterAddress Word8,
-  stack      :: Array StackAddress RAMAddress,
-  ram        :: Array RAMAddress Word8
+  displayWidth  :: Word32,
+  displayHeight :: Word32,
+  randomSeed    :: StdGen,
+  display       :: Array DisplayAddress Pixel,
+  inputs        :: Array Word8 InputState,
+  d             :: Word8,
+  s             :: Word8,
+  pc            :: RAMAddress,
+  sp            :: StackAddress,
+  i             :: RAMAddress,
+  registers     :: Array RegisterAddress Word8,
+  stack         :: Array StackAddress RAMAddress,
+  ram           :: Array RAMAddress Word8
 } deriving (Show)
 
--- A little check-list
---   Render trip-8 demo
---      Tick the updates at a specific clock-frequency
---      Set the values of the two timers based on their ticking frequency
---   Render breakout game
---      Setup input-handling code that converts raw inputs to input bits on the CPU
-
--- Constants
-instructionByteWidth = 2
-displayWidth = 64
-displayHeight = 32
-off = False
-on = True
-blankDisplay = initialize (0,displayWidth * displayHeight - 1) off
-
--- Semantic helper functions
-step pc = pc + instructionByteWidth
-
-skipIf pc True = pc + instructionByteWidth + instructionByteWidth
-skipIf pc False = pc + instructionByteWidth
-
-blockIf pc True = pc
-blockIf pc False = pc + instructionByteWidth
-
-pixelFromRam offset (x,y) cpu = nthbit (7 - x) (ram cpu ! (y + offset))
-
-pixelFromDisplay offset (x,y) cpu = display cpu ! to1DIndex displayWidth (x,y)
-
--- OpCode transformations
 callSubroutineAtNNN nnn cpu = cpu { 
   pc = nnn, 
   sp = sp cpu + 1,
-  stack = stack cpu // [(sp cpu,step(pc cpu))]
+  stack = stack cpu // [(sp cpu,pc cpu + 2)]
 }
 
 returnFromSubroutine cpu = cpu { 
@@ -92,90 +63,90 @@ jumpToV0PlusNNN v0 nnn cpu = cpu {
 }
 
 skipIfVxIsNN vx nn cpu = cpu { 
-  pc = skipIf (pc cpu) (vx == nn) 
+  pc = pc cpu + if vx == nn then 4 else 2
 }
 
 skipUnlessVxIsNN vx nn cpu = cpu { 
-  pc = skipIf (pc cpu) (vx /= nn) 
+  pc = pc cpu + if vx /= nn then 4 else 2
 }
 
 skipIfVxIsVy vx vy cpu = cpu { 
-  pc = skipIf (pc cpu) (vx == vy) 
+  pc = pc cpu + if vx == vy then 4 else 2
 }
 
 skipUnlessVxIsVy vx vy cpu = cpu { 
-  pc = skipIf (pc cpu) (vx /= vy) 
+  pc = pc cpu + if vx /= vy then 4 else 2
 }
 
 setVxToNN x vx nn cpu = cpu { 
-  pc = step (pc cpu), 
+  pc = pc cpu + 2, 
   registers = registers cpu // [(x,nn)] 
 }
 
 setVxToVxPlusNN x vx nn cpu = cpu { 
-  pc = step (pc cpu), 
+  pc = pc cpu + 2, 
   registers = registers cpu // [(x,vx + nn)] 
 }
 
 setVxToVy x vx vy cpu = cpu { 
-  pc = step (pc cpu), 
+  pc = pc cpu + 2, 
   registers = registers cpu // [(x,vy)] 
 }
 
 setVxToVxOrVy x vx vy cpu = cpu { 
-  pc = step (pc cpu), 
+  pc = pc cpu + 2, 
   registers = registers cpu // [(x,vx .|. vy)] 
 }
 
 setVxToVxAndVy x vx vy cpu = cpu { 
-  pc = step (pc cpu), 
+  pc = pc cpu + 2, 
   registers = registers cpu // [(x,vx .&. vy)] 
 }
 
 setVxToVxXorVy x vx vy cpu = cpu { 
-  pc = step (pc cpu), 
+  pc = pc cpu + 2, 
   registers = registers cpu // [(x,vx `xor` vy)] 
 }
 
 setVxToVxPlusVy x vx vy cpu = cpu {
-  pc = step (pc cpu),
+  pc = pc cpu + 2,
   registers = registers cpu // [(x,sum), (0xF,toWord8 carry)]
 } where (sum, carry) = vx `addWithCarry` vy
 
 setVxToVxMinusVy x vx vy cpu = cpu {
-  pc = step (pc cpu),
+  pc = pc cpu + 2,
   registers = registers cpu // [(x,difference), (0xF,toWord8 (not borrow))]
 } where (difference, borrow) = vx `subtractWithBorrow` vy
 
 setVxToVyMinusVx x vx vy cpu = cpu {
-  pc = step (pc cpu),
+  pc = pc cpu + 2,
   registers = registers cpu // [(x,difference), (0xF,toWord8 (not borrow))]
 } where (difference, borrow) = vy `subtractWithBorrow` vx
 
 rightShiftVxAndStoreLSBVx x vx cpu = cpu {
-  pc = step (pc cpu),
+  pc = pc cpu + 2,
   registers = registers cpu // [(x,vx `shiftR` 1), (0xF,lsbvx)]
 } where lsbvx = toWord8 (nthbit 0 vx)
 
 leftShiftVxAndStoreMSBVx x vx cpu = cpu {
-  pc = step (pc cpu),
+  pc = pc cpu + 2,
   registers = registers cpu // [(x,vx `shiftL` 1), (0xF,msbvx)]
 } where msbvx = toWord8 (nthbit 7 vx)
 
 setVxToRandAndNN x nn cpu = cpu {
-  pc = step (pc cpu),
+  pc = pc cpu + 2,
   registers = registers cpu // [(x,randValue .&. nn)],
   randomSeed = randomSeed'
 } where (randValue, randomSeed') = genWord8 (randomSeed cpu)
 
 clearDisplay cpu = cpu {
-  pc = step (pc cpu),
-  display = blankDisplay
+  pc = pc cpu + 2,
+  display = initialize (0, displayWidth cpu * displayHeight cpu - 1) False
 }
 
 drawSimple :: Word8 -> Word8 -> Word8 -> Chip8 -> Chip8
 drawSimple vx vy n cpu = cpu {
-  pc = step (pc cpu),
+  pc = pc cpu + 2,
   display = display cpu // pixels
 } where
   (x0,y0) = (word32 vx, word32 vy)
@@ -186,97 +157,100 @@ drawSimple vx vy n cpu = cpu {
   writePixel (i,j) = (index,pixel)
     where
       (x,y) = (x0 + i, y0 + j)
-      index = y * displayWidth + x
+      index = y * displayWidth cpu + x
       pixel = nthbit (7 - i) (ram cpu ! (ramOffset + word16 j))
 
-drawSpriteAtIToVxVyNHigh vx vy n cpu = cpu {  
-  pc = step (pc cpu),
-  display = display cpu // pixels,
-  registers = registers cpu // [(0xF,toWord8 collisionFlag)]
-} where 
-  (w,h)            = (8,word32 n)
-  (xRaw,yRaw)      = (word32 vx,word32 vy)
-  (xMin,yMin)      = wrap (displayWidth,displayHeight) (xRaw,yRaw)
-  (xMax,yMax)      = bound (displayWidth,displayHeight) (w,h) (xMin,yMin)
-  coordinates      = [0..(xMax - xMin)] × [0..(yMax - yMin)]
-  ramOffset        = i cpu
-  displayOffset    = to1DIndex displayWidth (xMin,yMin)
-  pixels           = fmap writePixel coordinates
-  collisionFlag    = foldr detectCollision False coordinates
-  writePixel (x,y) = (index,pixel)
-    where 
-      index        = displayOffset + to1DIndex displayWidth (x,y)
-      ramPixel     = pixelFromRam ramOffset (word16 x,word16 y) cpu
-      displayPixel = pixelFromDisplay displayOffset (x,y) cpu
-      pixel        = ramPixel `xor` displayPixel
-  detectCollision (x,y) cf = cf || collision
-    where
-      ramPixel     = pixelFromRam ramOffset (word16 x,word16 y) cpu
-      displayPixel = pixelFromDisplay displayOffset (x,y) cpu
-      collision    = ramPixel && displayPixel
+-- drawSpriteAtIToVxVyNHigh vx vy n cpu = cpu {  
+--   pc = pc cpu + 2,
+--   display = display cpu // pixels,
+--   registers = registers cpu // [(0xF,toWord8 collisionFlag)]
+-- } where 
+--   (w,h)            = (8,word32 n)
+--   (xRaw,yRaw)      = (word32 vx,word32 vy)
+--   (xMin,yMin)      = wrap (displayWidth,displayHeight) (xRaw,yRaw)
+--   (xMax,yMax)      = bound (displayWidth,displayHeight) (w,h) (xMin,yMin)
+--   coordinates      = [0..(xMax - xMin)] × [0..(yMax - yMin)]
+--   ramOffset        = i cpu
+--   displayOffset    = to1DIndex displayWidth (xMin,yMin)
+--   pixels           = fmap writePixel coordinates
+--   collisionFlag    = foldr detectCollision False coordinates
+--   pixelFromDisplay offset (x,y) cpu = display cpu ! to1DIndex (displayWidth cpu) (x,y)
+--   writePixel (x,y) = (index,pixel)
+--     where 
+--       index        = displayOffset + to1DIndex displayWidth (x,y)
+--       ramPixel     = pixelFromRam ramOffset (word16 x,word16 y) cpu
+--       displayPixel = pixelFromDisplay displayOffset (x,y) cpu
+--       pixel        = ramPixel `xor` displayPixel
+--   detectCollision (x,y) cf = cf || collision
+--     where
+--       ramPixel     = pixelFromRam ramOffset (word16 x,word16 y) cpu
+--       displayPixel = pixelFromDisplay displayOffset (x,y) cpu
+--       collision    = ramPixel && displayPixel
 
 setIToNNN nnn cpu = cpu {
-  pc = step (pc cpu),
+  pc = pc cpu + 2,
   i = nnn
 }
 
 setIToIPlusVx vx cpu = cpu {
-  pc = step (pc cpu),
+  pc = pc cpu + 2,
   i = i cpu + word16 vx
 }
 
 setIToISpriteAddressVx vx cpu = cpu {
-  pc = step (pc cpu),
+  pc = pc cpu + 2,
   i = word16 vx * fontHeight
 } where fontHeight = 5
 
 storeBCDVxAtI vx cpu = cpu {
-  pc = step (pc cpu),
+  pc = pc cpu + 2,
   ram = ram cpu // [(i cpu,hundreds), (i cpu + 1,tens), (i cpu + 2,ones)]
 } where (hundreds, tens, ones) = digits vx
 
 dumpRegistersV0ToVxToI x cpu = cpu {
-  pc = step (pc cpu),
+  pc = pc cpu + 2,
   ram = copyTo (ram cpu,i cpu) (registers cpu,0) x
 }
 
 loadRegistersV0ToVxFromI x cpu = cpu {
-  pc = step (pc cpu),
+  pc = pc cpu + 2,
   registers = copyTo (registers cpu,0) (ram cpu,i cpu) x
 }
 
 setVxToD x cpu = cpu {
-  pc = step (pc cpu),
+  pc = pc cpu + 2,
   registers = registers cpu // [(x,d cpu)]
 }
 
 setDToVx vx cpu = cpu {
-  pc = step (pc cpu),
+  pc = pc cpu + 2,
   d = vx
 }
 
 setSToVx vx cpu = cpu {
-  pc = step (pc cpu),
+  pc = pc cpu + 2,
   s = vx
 }
 
 skipIfKeyDownVx vx cpu = cpu {
-  pc = skipIf (pc cpu) (inputs cpu ! vx) 
+  pc = pc cpu + if inputs cpu ! vx then 4 else 2
 }
 
 skipUnlessKeyDownVx vx cpu = cpu {
-  pc = skipIf (pc cpu) (not (inputs cpu ! vx))
+  pc = pc cpu + if inputs cpu ! vx then 2 else 4
 }
 
 blockUnlessKeyDownVx vx cpu = cpu {
-  pc = blockIf (pc cpu) (not (inputs cpu ! vx))
+  pc = pc cpu + if inputs cpu ! vx then 2 else 0
 }
 
 seed :: StdGen -> Chip8
 seed randomSeed = Chip8 {
+  displayWidth = 64,
+  displayHeight = 32,
   randomSeed = randomSeed,
-  display = blankDisplay,
-  inputs = initialize (0,0xF) off,
+  display = initialize (0,64 * 32 - 1) False,
+  inputs = initialize (0,0xF) False,
   registers = initialize (0,0xF) 0, 
   stack = initialize (0,0xF) 0,
   ram = initialize (0,0xFFF) 0,
@@ -373,9 +347,11 @@ updateLoop ctx count cpu = do
   let nibbles = fetch cpu
   let cpu' = execute nibbles cpu
   let ram = display cpu'
-  let textureData :: [Word8] = foldr (\b e -> saturateWord8 b : e) [] ram
-  let textureSize = TextureSize2D (fromIntegral displayWidth) (fromIntegral displayHeight)
+  let textureWidth = fromIntegral (displayWidth cpu)
+  let textureHeight = fromIntegral (displayHeight cpu)
+  let textureSize = TextureSize2D textureWidth textureHeight
   let textureFormats = (R8, Red, UnsignedByte)
+  let textureData :: [Word8] = foldr (\b e -> saturateWord8 b : e) [] ram
   let program = displayProgram ctx
   let uniforms = displayUniforms ctx 
   let textures = displayTextures ctx
@@ -394,14 +370,26 @@ updateLoop ctx count cpu = do
 
 main :: IO ()
 main = do
+  -- Emulator loading and initialization
+  fontBinary <- BS.readFile "fonts/default-font.bin"
+  ibmLogoBinary <- BS.readFile "roms/IBM-logo.bin"
+  testOpcodeBinary <- BS.readFile "roms/test-opcode.bin"
+
+  let rndSeed = mkStdGen 10
+  let font = toArray fontBinary
+  let rom = toArray testOpcodeBinary 
+  let chip8 = loadRom rom $ loadFont font $ seed rndSeed
+
   -- Renderer loading and initialization
   let windowScaleFactor = 20
-  let width = fromIntegral (displayWidth * windowScaleFactor)
-  let height = fromIntegral (displayHeight * windowScaleFactor)
-  let viewportPosition = Position 0 0
+  let width = displayWidth chip8 * windowScaleFactor
+  let height = displayHeight chip8 * windowScaleFactor
   let viewportSize = Size (fromIntegral width) (fromIntegral height)
+  let viewportPosition = Position 0 0
+  let windowWidth = fromIntegral width
+  let windowHeight = fromIntegral height
   True <- GLFW.init
-  Just window <- GLFW.createWindow width height "chip8" Nothing Nothing 
+  Just window <- GLFW.createWindow windowWidth windowHeight "chip8" Nothing Nothing 
   viewport $= (viewportPosition,viewportSize)
   GLFW.defaultWindowHints
   GLFW.setErrorCallback (Just onError)
@@ -411,7 +399,7 @@ main = do
   GLFW.setKeyCallback window (Just onKeyPressed)
   GLFW.setWindowCloseCallback window (Just onShutdown)
 
-  -- setup vertex array buffer object containing geometry for full-screen triangle
+  -- setup geometry for full-screen triangle
   let v0 :: Vertex2 Float = Vertex2 (-4) (-4)
   let v1 :: Vertex2 Float = Vertex2 0  4
   let v2 :: Vertex2 Float = Vertex2 4 (-4)
@@ -421,13 +409,13 @@ main = do
   let dataType = Float
   vao <- mkVertexArrayObject size numComponents dataType vertices
 
-  -- create texture, bind it, and set essential properties
+  -- create texture for the display
   let textureUnit :: GLuint = 0
   let filter = (Nearest, Nearest)
   let wrapping = (Repeated, ClampToEdge)
   displayTexture <- mkTexture2D textureUnit filter wrapping
 
-  -- Setup a program
+  -- Setup the shader program and its associated parameters
   vertexShaderCode <- readFile "shaders/screen-vertex.glsl"
   fragmentShaderCode <- readFile "shaders/screen-fragment.glsl"
   Compiled program <- mkShaderProgram vertexShaderCode fragmentShaderCode
@@ -447,14 +435,4 @@ main = do
     displayTextures = textures 
   }
 
-  -- Emulator loading and initialization
-  fontBinary <- BS.readFile "fonts/default-font.bin"
-  ibmLogoBinary <- BS.readFile "roms/IBM-logo.bin"
-  testOpcodeBinary <- BS.readFile "roms/test-opcode.bin"
-
-  let rndSeed = mkStdGen 10
-  let font = toArray fontBinary
-  let rom = toArray testOpcodeBinary 
-  -- let rom = toArray ibmLogoBinary 
-  let chip8 = loadRom rom $ loadFont font $ seed rndSeed
   updateLoop ctx 0 chip8
