@@ -344,14 +344,12 @@ onShutdown e = putStrLn "shutdown"
 
 updateLoop :: RenderContext -> Int -> Chip8 -> IO ()
 updateLoop ctx count cpu = do
-  let nibbles = fetch cpu
-  let cpu' = execute nibbles cpu
-  let ram = display cpu'
+  let cpu' = runChip8 25 cpu
   let textureWidth = fromIntegral (displayWidth cpu)
   let textureHeight = fromIntegral (displayHeight cpu)
   let textureSize = TextureSize2D textureWidth textureHeight
   let textureFormats = (R8, Red, UnsignedByte)
-  let textureData :: [Word8] = foldr (\b e -> saturateWord8 b : e) [] ram
+  let textureData = foldr convertDisplayToWord8List [] (display cpu')
   let program = displayProgram ctx
   let uniforms = displayUniforms ctx 
   let textures = displayTextures ctx
@@ -367,6 +365,16 @@ updateLoop ctx count cpu = do
   GLFW.pollEvents
   GLFW.swapBuffers (window ctx)
   updateLoop ctx (count + 1) cpu'
+  where
+    convertDisplayToWord8List :: Bool -> [Word8] -> [Word8]
+    convertDisplayToWord8List b e = saturateWord8 b : e
+    runChip8 :: Int -> Chip8 -> Chip8
+    runChip8 0 cpu = cpu
+    runChip8 n cpu = runChip8 (n - 1) $ execute (fetch cpu) cpu { 
+      s = max 0 (s cpu - 1),
+      d = max 0 (d cpu - 1)
+    }
+
 
 main :: IO ()
 main = do
@@ -374,10 +382,11 @@ main = do
   fontBinary <- BS.readFile "fonts/default-font.bin"
   ibmLogoBinary <- BS.readFile "roms/IBM-logo.bin"
   testOpcodeBinary <- BS.readFile "roms/test-opcode.bin"
+  trip8Binary <- BS.readFile "roms/trip-8-demo.bin"
 
   let rndSeed = mkStdGen 10
   let font = toArray fontBinary
-  let rom = toArray testOpcodeBinary 
+  let rom = toArray trip8Binary
   let chip8 = loadRom rom $ loadFont font $ seed rndSeed
 
   -- Renderer loading and initialization
