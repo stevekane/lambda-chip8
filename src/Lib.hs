@@ -57,12 +57,6 @@ addWithCarry a b = (a + b, (word16 a + word16 b) > 255)
 subtractWithBorrow :: Word8 -> Word8 -> (Word8, Bool)
 subtractWithBorrow a b = (a - b,a < b)
 
-(×) :: Integral a => [a] -> [a] -> [(a,a)]
-l × r = [ (x,y) | y <- r, x <- l ]
-
-to1DIndex :: Integral a => a -> (a,a) -> a
-to1DIndex w (x,y) = y * w + x
-
 initialize :: (Integral i, Ix i) => (i,i) -> e -> Array i e
 initialize (min,max) v0 = array (min,max) (fmap initialPair [min..max])
   where initialPair i = (i,v0)
@@ -115,16 +109,3 @@ showColumns c p a = foldr render "" (assocs a)
     prefix i = if i `mod` c == 0 then "\n" else ""
     spacer i = if i `mod` p == 0 then "\t\t" else "\t"
     render (i,y) x = prefix i ++ show y ++ spacer (i + 1) ++ x
-
-showDisplay :: 
-  (Ix i, Integral i) => 
-  i -> 
-  i -> 
-  Array i Bool -> 
-  String
-showDisplay w h a = foldr render "" (assocs a)
-  where
-    toPixel True  = "[]"
-    toPixel False = "  " 
-    prefix i = if i `mod` w == 0 then "\n" else ""
-    render (i,y) x = prefix i ++ toPixel y ++ x

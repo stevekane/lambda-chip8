@@ -4,7 +4,7 @@ module Main where
 
 import Data.Bits (shiftL, shiftR, (.&.), (.|.), xor)
 import Data.Word (Word8, Word16, Word32)
-import Data.Array (Array, Ix, array, listArray, assocs, ixmap, (!), (//))
+import Data.Array (Array, Ix, array, assocs, bounds, (!), (//))
 import System.Random (StdGen, mkStdGen, genWord8)
 import Graphics.Rendering.OpenGL
 import Graphics.Rendering.OpenGL.GL.Texturing
@@ -13,13 +13,12 @@ import qualified Data.ByteString as BS
 import qualified Graphics.UI.GLFW as GLFW
 
 import Lib
+import Array2D
 import Rendering
 
 type RAMAddress = Word16
 type StackAddress = Word8
 type RegisterAddress = Word8
-type DisplayAddress = Word32
-type Pixel = Bool
 type InputState = Bool
 type Registers = Array RegisterAddress Word8
 type Rom = Array RAMAddress Word8
@@ -27,20 +26,32 @@ type Font = Array RAMAddress Word8
 type Nibbles = (Word8, Word8, Word8, Word8)
 type OpCode = (Word8, Word8, Word8, Word8, Word8, Word8, Word16)
 
+data Display i e = Display {
+  w      :: i,
+  h      :: i,
+  pixels :: Array i e
+} deriving (Show)
+
+instance Array2D Display where
+  width            = w
+  height           = h
+  at v (x,y)       = pixels v ! (w v * y + x)
+  update v pixels' = v { pixels = pixels v // fmap toFlatIndex pixels' }
+    where
+      toFlatIndex (x,y,e) = (w v * y + x,e)
+
 data Chip8 = Chip8 {
-  displayWidth  :: Word32,
-  displayHeight :: Word32,
-  randomSeed    :: StdGen,
-  display       :: Array DisplayAddress Pixel,
-  inputs        :: Array Word8 InputState,
-  d             :: Word8,
-  s             :: Word8,
-  pc            :: RAMAddress,
-  sp            :: StackAddress,
-  i             :: RAMAddress,
-  registers     :: Array RegisterAddress Word8,
-  stack         :: Array StackAddress RAMAddress,
-  ram           :: Array RAMAddress Word8
+  randomSeed :: StdGen,
+  display    :: Display Word32 Bool,
+  inputs     :: Array Word8 InputState,
+  d          :: Word8,
+  s          :: Word8,
+  pc         :: RAMAddress,
+  sp         :: StackAddress,
+  i          :: RAMAddress,
+  registers  :: Array RegisterAddress Word8,
+  stack      :: Array StackAddress RAMAddress,
+  ram        :: Array RAMAddress Word8
 } deriving (Show)
 
 callSubroutineAtNNN nnn cpu = cpu { 
@@ -141,24 +152,25 @@ setVxToRandAndNN x nn cpu = cpu {
 
 clearDisplay cpu = cpu {
   pc = pc cpu + 2,
-  display = initialize (0, displayWidth cpu * displayHeight cpu - 1) False
+  display = display cpu `fill` False
 }
 
-drawSimple :: Word8 -> Word8 -> Word8 -> Chip8 -> Chip8
-drawSimple vx vy n cpu = cpu {
+drawSpriteAtIToVxVyNHigh :: Word8 -> Word8 -> Word8 -> Chip8 -> Chip8
+drawSpriteAtIToVxVyNHigh vx vy n cpu = cpu {
   pc = pc cpu + 2,
-  display = display cpu // pixels
+  display = display cpu `update` pixels
 } where
   (x0,y0) = (word32 vx, word32 vy)
   (w,h)   = (8,word32 n)
   offsets = [0..(w-1)] × [0..(h-1)]
   ramOffset = i cpu
   pixels = fmap writePixel offsets
-  writePixel (i,j) = (index,pixel)
+  writePixel (i,j) = (x,y,pixel)
     where
       (x,y) = (x0 + i, y0 + j)
-      index = y * displayWidth cpu + x
-      pixel = nthbit (7 - i) (ram cpu ! (ramOffset + word16 j))
+      displayPixel = display cpu `at` (x,y)
+      spritePixel = nthbit (7 - i) (ram cpu ! (ramOffset + word16 j))
+      pixel = displayPixel `xor` spritePixel
 
 -- drawSpriteAtIToVxVyNHigh vx vy n cpu = cpu {  
 --   pc = pc cpu + 2,
@@ -244,12 +256,16 @@ blockUnlessKeyDownVx vx cpu = cpu {
   pc = pc cpu + if inputs cpu ! vx then 2 else 0
 }
 
+decrementTimers :: Chip8 -> Chip8
+decrementTimers cpu = cpu {
+  s = max 0 (s cpu - 1),
+  d = max 0 (d cpu - 1)
+}
+
 seed :: StdGen -> Chip8
 seed randomSeed = Chip8 {
-  displayWidth = 64,
-  displayHeight = 32,
   randomSeed = randomSeed,
-  display = initialize (0,64 * 32 - 1) False,
+  display = Display { w = 64, h = 32, pixels = initialize (0,64 * 32 - 1) False },
   inputs = initialize (0,0xF) False,
   registers = initialize (0,0xF) 0, 
   stack = initialize (0,0xF) 0,
@@ -301,8 +317,7 @@ execute (a,x,y,n) cpu = case (a,x,y,n) of
   (0x8, _, _, 0xE)     -> leftShiftVxAndStoreMSBVx x vx cpu
   (0xC, _, _, _)       -> setVxToRandAndNN x nn cpu
   (0x0,0x0,0xE,0x0)    -> clearDisplay cpu
-  -- (0xD, _, _, _)       -> drawSpriteAtIToVxVyNHigh vx vy n cpu
-  (0xD, _, _, _)       -> drawSimple vx vy n cpu
+  (0xD, _, _, _)       -> drawSpriteAtIToVxVyNHigh vx vy n cpu
   (0xA, _, _, _)       -> setIToNNN nnn cpu
   (0xF, _, 0x1, 0xE)   -> setIToIPlusVx vx cpu
   (0xF, _, 0x2, 0x9)   -> setIToISpriteAddressVx vx cpu
@@ -331,7 +346,6 @@ onRefresh e = putStrLn "refresh"
 
 onResize :: GLFW.FramebufferSizeCallback
 onResize e w h = do
-  putStrLn $ "width:" ++ show w ++ " | height:" ++ show h
   let viewportPosition = Position 0 0
   let viewportSize = Size (fromIntegral w) (fromIntegral h)
   viewport $= (viewportPosition, viewportSize)
@@ -345,11 +359,11 @@ onShutdown e = putStrLn "shutdown"
 updateLoop :: RenderContext -> Int -> Chip8 -> IO ()
 updateLoop ctx count cpu = do
   let cpu' = runChip8 25 cpu
-  let textureWidth = fromIntegral (displayWidth cpu)
-  let textureHeight = fromIntegral (displayHeight cpu)
+  let textureWidth = fromIntegral (width (display cpu))
+  let textureHeight = fromIntegral (height (display cpu))
   let textureSize = TextureSize2D textureWidth textureHeight
   let textureFormats = (R8, Red, UnsignedByte)
-  let textureData = foldr convertDisplayToWord8List [] (display cpu')
+  let textureData = fmap saturateWord8 (rowMajor (display cpu'))
   let program = displayProgram ctx
   let uniforms = displayUniforms ctx 
   let textures = displayTextures ctx
@@ -366,15 +380,9 @@ updateLoop ctx count cpu = do
   GLFW.swapBuffers (window ctx)
   updateLoop ctx (count + 1) cpu'
   where
-    convertDisplayToWord8List :: Bool -> [Word8] -> [Word8]
-    convertDisplayToWord8List b e = saturateWord8 b : e
     runChip8 :: Int -> Chip8 -> Chip8
     runChip8 0 cpu = cpu
-    runChip8 n cpu = runChip8 (n - 1) $ execute (fetch cpu) cpu { 
-      s = max 0 (s cpu - 1),
-      d = max 0 (d cpu - 1)
-    }
-
+    runChip8 n cpu = runChip8 (n - 1) $ execute (fetch cpu) (decrementTimers cpu)
 
 main :: IO ()
 main = do
@@ -391,12 +399,12 @@ main = do
 
   -- Renderer loading and initialization
   let windowScaleFactor = 20
-  let width = displayWidth chip8 * windowScaleFactor
-  let height = displayHeight chip8 * windowScaleFactor
-  let viewportSize = Size (fromIntegral width) (fromIntegral height)
+  let displayWidth = width (display chip8) * windowScaleFactor
+  let displayHeight = height (display chip8) * windowScaleFactor
+  let viewportSize = Size (fromIntegral displayWidth) (fromIntegral displayHeight)
   let viewportPosition = Position 0 0
-  let windowWidth = fromIntegral width
-  let windowHeight = fromIntegral height
+  let windowWidth = fromIntegral displayWidth
+  let windowHeight = fromIntegral displayHeight
   True <- GLFW.init
   Just window <- GLFW.createWindow windowWidth windowHeight "chip8" Nothing Nothing 
   viewport $= (viewportPosition,viewportSize)
