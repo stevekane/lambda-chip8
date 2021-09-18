@@ -26,6 +26,7 @@ source-repository head
 library
   exposed-modules:
       Array2D
+      Chip8
       Lib
       Rendering
   other-modules:

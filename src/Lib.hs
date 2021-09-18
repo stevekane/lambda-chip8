@@ -61,6 +61,9 @@ initialize :: (Integral i, Ix i) => (i,i) -> e -> Array i e
 initialize (min,max) v0 = array (min,max) (fmap initialPair [min..max])
   where initialPair i = (i,v0)
 
+(×) :: Integral a => [a] -> [a] -> [(a,a)]
+l × r = [ (x,y) | y <- r, x <- l ]
+
 copyTo :: 
   (Ix a, Ix b, Integral a, Integral b) => 
   (Array a e, a) -> 
