@@ -22,6 +22,13 @@ data Chip8 s d = Chip8 {
   ram        :: Array Word16 Word8
 } deriving Show
 
+type Inputs = Array Word8 Bool
+type Registers = Array Word8 Word8
+type RAM = Array Word16 Word8
+data C8Min s d 
+  = C8Min StdGen d Inputs s Registers Word8 Word8 Word16 Word16 RAM
+  deriving Show
+
 data Display i e = Display {
   w      :: i,
   h      :: i,
