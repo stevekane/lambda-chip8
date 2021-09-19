@@ -68,8 +68,8 @@ main = do
 
   let rndSeed = mkStdGen 10
   let font = toArray fontBinary
-  let rom = toArray trip8Binary
-  let chip8 = loadRom rom $ loadFont font $ seed rndSeed
+  let prog = toArray trip8Binary
+  let chip8 = loadProgram prog $ loadFont font $ seed rndSeed
 
   -- Renderer loading and initialization
   let windowScaleFactor = 20

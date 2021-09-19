@@ -6,13 +6,16 @@ import Data.Array (Array, array, assocs, (!), (//))
 import System.Random (StdGen, mkStdGen, genWord8)
 import Lib
 import Array2D
+import UnsafeStack
 
 type RAMAddress = Word16
 type StackAddress = Word8
 type RegisterAddress = Word8
 type InputState = Bool
 type Registers = Array RegisterAddress Word8
-type Rom = Array RAMAddress Word8
+type Stack = [RAMAddress]
+type RAM = Array RAMAddress Word8
+type ROM = Array RAMAddress Word8
 type Font = Array RAMAddress Word8
 type Nibbles = (Word8, Word8, Word8, Word8)
 type OpCode = (Word8, Word8, Word8, Word8, Word8, Word8, Word16)
@@ -21,21 +24,20 @@ data Chip8 = Chip8 {
   randomSeed :: StdGen,
   display    :: Display Word32 Bool,
   inputs     :: Array Word8 InputState,
+  stack      :: Stack,
+  v          :: Array RegisterAddress Word8,
   d          :: Word8,
   s          :: Word8,
   pc         :: RAMAddress,
-  sp         :: StackAddress,
   i          :: RAMAddress,
-  v          :: Array RegisterAddress Word8,
-  stack      :: Array StackAddress RAMAddress,
   ram        :: Array RAMAddress Word8
-} deriving (Show)
+} deriving Show
 
 data Display i e = Display {
   w      :: i,
   h      :: i,
   pixels :: Array i e
-} deriving (Show)
+} deriving Show
 
 instance Array2D Display where
   width            = w
@@ -45,16 +47,20 @@ instance Array2D Display where
     where
       toFlatIndex (x,y,e) = (w v * y + x,e)
 
+instance UnsafeStack [] where
+  push       = (:)  
+  pop []     = error "Unsafe pop failure"
+  pop (x:xs) = (x,xs)
+
 callSubroutineAtNNN nnn cpu = cpu { 
   pc = nnn, 
-  sp = sp cpu + 1,
-  stack = stack cpu // [(sp cpu,pc cpu + 2)]
+  stack = push (pc cpu + 2) (stack cpu)
 }
 
 returnFromSubroutine cpu = cpu { 
-  pc = stack cpu ! (sp cpu - 1),
-  sp = sp cpu - 1
-}
+  pc = pc',
+  stack = stack'
+} where (pc',stack') = pop (stack cpu)
 
 jumpToNNN nnn cpu = cpu { 
   pc = nnn 
@@ -232,10 +238,9 @@ seed randomSeed = Chip8 {
   display = Display { w = 64, h = 32, pixels = initialize (0,64 * 32 - 1) False },
   inputs = initialize (0,0xF) False,
   v = initialize (0,0xF) 0, 
-  stack = initialize (0,0xF) 0,
+  stack = [],
   ram = initialize (0,0xFFF) 0,
   pc = 0x200,
-  sp = 0, 
   d = 0,
   s = 0,
   i = 0
@@ -246,10 +251,10 @@ loadFont font cpu = cpu {
   ram = ram cpu // assocs font
 }
 
-loadRom :: Rom -> Chip8 -> Chip8
-loadRom rom cpu = cpu {
+loadProgram :: RAM -> Chip8 -> Chip8
+loadProgram p cpu = cpu {
   pc = 0x200,
-  ram = ram cpu // fmap (shiftBy 0x200) (assocs rom)
+  ram = ram cpu // fmap (shiftBy 0x200) (assocs p)
 } where shiftBy o (i,j) = (i + o,j)
 
 fetch :: Chip8 -> Nibbles

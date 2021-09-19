@@ -27,8 +27,10 @@ library
   exposed-modules:
       Array2D
       Chip8
+      Chip8Architecture
       Lib
       Rendering
+      UnsafeStack
   other-modules:
       Paths_chip8
   hs-source-dirs:
