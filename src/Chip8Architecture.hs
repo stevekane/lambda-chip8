@@ -12,7 +12,7 @@ class Chip8Architecture c where
   randomSeed     :: c s d -> StdGen
   setRandomSeed  :: StdGen -> c s d -> c s d
   inputs         :: c s d -> Array Word8 Bool
-  setinputs      :: Array Word8 Bool -> c s d -> c s d
+  setInputs      :: Array Word8 Bool -> c s d -> c s d
   display        :: Array2D d => c s (d Word32 Bool) -> d Word32 Bool
   setDisplay     :: Array2D d => d Word32 Bool -> c s (d Word32 Bool) -> c s (d Word32 Bool)
   stack          :: UnsafeStack s => c (s Word16) d -> s Word16
@@ -29,6 +29,19 @@ class Chip8Architecture c where
   setI           :: Word16 -> c s d -> c s d
   ram            :: c s d -> Array Word16 Word8
   setRAM         :: Array Word16 Word8 -> c s d -> c s d
+
+  loadProgram :: Array Word16 Word8 -> c s d -> c s d
+  loadProgram p c8 = setPC 0x200 . setRAM ram' $ c8
+    where 
+      shiftBy o (i,j) = (i + o,j)
+      ram' = ram c8 // fmap (shiftBy 0x200) (assocs p)
+
+  loadFont :: Array Word16 Word8 -> c s d -> c s d
+  loadFont f c8 = setRAM ram' c8
+    where ram' = ram c8 // assocs f
+
+  decrementTimers :: c s d -> c s d
+  decrementTimers c8 = setS (s c8 - 1) . setD (d c8 - 1) $ c8
 
   stepPC :: c s d -> c s d
   stepPC c8 = setPC (pc c8 + 2) c8
@@ -80,10 +93,10 @@ class Chip8Architecture c where
       where 
         v' = v c8 // [(x,nn)]
 
-    -- step pc. v(x) = v(0) + nn
+    -- step pc. v(x) = v(x) + nn
     (0x7, _, _, _) -> stepPC . setV v' $ c8
       where 
-        v' = v c8 // [(x,v0 + nn)]
+        v' = v c8 // [(x,vx + nn)]
 
     -- step pc. v(x) = v(y)
     (0x8, _, _, 0x0) -> stepPC . setV v' $ c8

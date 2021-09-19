@@ -2,6 +2,7 @@
 
 module Main where
 
+import Data.Word (Word8, Word16, Word32)
 import System.Random (mkStdGen)
 import Graphics.Rendering.OpenGL
 import Graphics.Rendering.OpenGL.GL.Texturing
@@ -9,8 +10,10 @@ import Graphics.Rendering.OpenGL.GL.Texturing
 import qualified Data.ByteString as BS
 import qualified Graphics.UI.GLFW as GLFW
 
-import Chip8
+import Chip8 (Chip8, seed)
+import Chip8Architecture (Chip8Architecture(..))
 import Rendering
+import UnsafeStack
 import Array2D
 import Lib
 
@@ -32,7 +35,11 @@ onKeyPressed w key num state modifiers = print key
 onShutdown :: GLFW.WindowCloseCallback
 onShutdown e = putStrLn "shutdown"
 
-updateLoop :: RenderContext -> Chip8 -> IO ()
+updateLoop :: 
+  (Chip8Architecture c, Array2D d, UnsafeStack s) =>
+  RenderContext -> 
+  c (s Word16) (d Word32 Bool) -> 
+  IO ()
 updateLoop ctx cpu = do
   let textureWidth = fromIntegral . width . display $ cpu
   let textureHeight = fromIntegral . height . display $ cpu
@@ -52,11 +59,11 @@ updateLoop ctx cpu = do
   render program indexCount (vao ctx) uniforms textures 
   GLFW.pollEvents
   GLFW.swapBuffers (window ctx)
-  updateLoop ctx (runChip8 25 cpu)
+  updateLoop ctx (ntimes 25 (execute . decrementTimers) cpu)
   where
-    runChip8 :: Int -> Chip8 -> Chip8
-    runChip8 0 cpu = cpu
-    runChip8 n cpu = runChip8 (n - 1) $ execute (fetch cpu) (decrementTimers cpu)
+    ntimes :: Int -> (a -> a) -> a -> a
+    ntimes 0 f x = x
+    ntimes n f x = ntimes (n - 1) f (f x)
 
 main :: IO ()
 main = do
@@ -68,6 +75,8 @@ main = do
 
   let rndSeed = mkStdGen 10
   let font = toArray fontBinary
+  -- let prog = toArray ibmLogoBinary
+  -- let prog = toArray testOpcodeBinary
   let prog = toArray trip8Binary
   let chip8 = loadProgram prog $ loadFont font $ seed rndSeed
 
