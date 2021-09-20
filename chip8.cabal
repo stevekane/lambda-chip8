@@ -28,6 +28,7 @@ library
       Array2D
       Chip8
       Chip8Architecture
+      Chip8Model
       Lib
       Rendering
       UnsafeStack
@@ -43,6 +44,7 @@ library
     , base >=4.7 && <5
     , bytestring
     , containers
+    , lens
     , mtl
     , random
     , vector
@@ -64,6 +66,7 @@ executable chip8-exe
     , bytestring
     , chip8
     , containers
+    , lens
     , mtl
     , random
     , vector
@@ -86,6 +89,7 @@ test-suite chip8-test
     , bytestring
     , chip8
     , containers
+    , lens
     , mtl
     , random
     , vector

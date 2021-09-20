@@ -52,6 +52,7 @@ updateLoop ctx cpu = do
   let writeableTexture = snd (head textures)
   let indexCount = 3
   let clearedColor = Color4 0 0 0 1
+  let instructionsPerCycle = 25
 
   uploadTexture2D writeableTexture textureSize textureFormats textureData
   clearColor $= clearedColor
@@ -59,7 +60,7 @@ updateLoop ctx cpu = do
   render program indexCount (vao ctx) uniforms textures 
   GLFW.pollEvents
   GLFW.swapBuffers (window ctx)
-  updateLoop ctx (ntimes 25 (execute . decrementTimers) cpu)
+  updateLoop ctx . ntimes instructionsPerCycle (execute . decrementTimers) $ cpu
   where
     ntimes :: Int -> (a -> a) -> a -> a
     ntimes 0 f x = x
