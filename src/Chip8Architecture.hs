@@ -60,7 +60,7 @@ class Chip8Architecture c where
     c (s Word16) (d Word32 Bool) -> 
     c (s Word16) (d Word32 Bool)
   execute c8 = case (a,x,y,z) of
-    -- pc == nnn. stack push pc + 2
+    -- pc = nnn. stack push pc + 2
     (0x2, _, _, _) -> setStack stack' . setPC nnn $ c8
       where 
         stack' = push (pc c8 + 2) (stack c8)

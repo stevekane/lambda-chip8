@@ -29,6 +29,7 @@ library
       Chip8
       Chip8Architecture
       Chip8Model
+      Chip8Record
       Lib
       Rendering
       UnsafeStack
