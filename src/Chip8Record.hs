@@ -2,10 +2,11 @@
 
 module Chip8Record where
 
+import Prelude hiding (replicate)
 import Data.Bits (shiftL, shiftR, (.&.), (.|.), xor)
 import Data.Word (Word8, Word16, Word32)
 import Control.Lens (Lens'(..), ASetter(..), lens, set, over, view)
-import Data.Vector (Vector(..), (!), (//))
+import Data.Vector (Vector(..), (!), (//), replicate)
 
 import Lib
 
@@ -72,6 +73,12 @@ fetchNibbles r c8 = (highNibble b0, lowNibble b0, highNibble b1, lowNibble b1)
 
 execute :: Chip8Record c -> c -> c
 execute r c8 = case (a,x,y,z) of 
+  -- clear display
+  (0x0, 0x0, 0xE, 0x0) -> inc (pc r) 2 . set (display r) blankDisplay $ c8
+    where
+      size         = 64 * 32
+      blankDisplay = replicate size False
+
   -- pc = pop stack
   (0x0, 0x0, 0xE, 0xE) -> set (pc r) pc' c8'
     where 
@@ -115,7 +122,7 @@ execute r c8 = case (a,x,y,z) of
           spritePixel  = nthbit (7 - i) (memory ! (ramOffset + j))
           pixel        = displayPixel `xor` spritePixel
 
-  _ -> error "Unknown opcode"
+  _ -> error $ "Unknown opcode: "  ++ show (a,x,y,z)
   where
     (a,x,y,z) = fetchNibbles r c8
     vx = view (v r) c8 ! fromIntegral x

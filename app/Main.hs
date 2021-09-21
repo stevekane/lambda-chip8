@@ -2,20 +2,26 @@
 
 module Main where
 
+import Prelude hiding (replicate)
+
 import Data.Word (Word8, Word16, Word32)
+import Data.Vector (replicate, fromList, (//), (!))
 import System.Random (mkStdGen)
+import Control.Lens (view)
 import Graphics.Rendering.OpenGL
 import Graphics.Rendering.OpenGL.GL.Texturing
 
 import qualified Data.ByteString as BS
 import qualified Graphics.UI.GLFW as GLFW
 
-import Chip8 (Chip8, seed)
-import Chip8Architecture (Chip8Architecture(..))
+-- import Chip8 (Chip8, seed)
+-- import Chip8Architecture (Chip8Architecture(..))
+import Chip8Record (Chip8Record(..), C8Classic(..), chip8Record, execute)
+import VectorUtils (indexPairs, fromByteString, copyTo)
 import Rendering
 import UnsafeStack
 import Array2D
-import Lib
+import Lib hiding (copyTo)
 
 onError :: GLFW.ErrorCallback
 onError e s = putStrLn $ unwords [show e, show s]
@@ -35,17 +41,25 @@ onKeyPressed w key num state modifiers = print key
 onShutdown :: GLFW.WindowCloseCallback
 onShutdown e = putStrLn "shutdown"
 
+-- updateLoop :: 
+--   (Chip8Architecture c, Array2D d, UnsafeStack s) =>
+--   RenderContext -> 
+--   c (s Word16) (d Word32 Bool) -> 
+--   IO ()
 updateLoop :: 
-  (Chip8Architecture c, Array2D d, UnsafeStack s) =>
-  RenderContext -> 
-  c (s Word16) (d Word32 Bool) -> 
-  IO ()
-updateLoop ctx cpu = do
-  let textureWidth = fromIntegral . width . display $ cpu
-  let textureHeight = fromIntegral . height . display $ cpu
+  RenderContext ->
+  Chip8Record c ->
+  c ->
+  IO()
+updateLoop ctx r cpu = do
+  let textureWidth = 64
+  let textureHeight = 32
+  -- let textureWidth = fromIntegral . width . display $ cpu
+  -- let textureHeight = fromIntegral . height . display $ cpu
   let textureSize = TextureSize2D textureWidth textureHeight
   let textureFormats = (R8, Red, UnsignedByte)
-  let textureData = fmap saturateWord8 . rowMajor . display $ cpu
+  -- let textureData = fmap saturateWord8 . rowMajor . display $ cpu
+  let textureData = foldr (\b xs -> saturateWord8 b : xs) [] (view (display r) cpu)
   let program = displayProgram ctx
   let uniforms = displayUniforms ctx 
   let textures = displayTextures ctx
@@ -60,7 +74,8 @@ updateLoop ctx cpu = do
   render program indexCount (vao ctx) uniforms textures 
   GLFW.pollEvents
   GLFW.swapBuffers (window ctx)
-  updateLoop ctx . ntimes instructionsPerCycle (execute . decrementTimers) $ cpu
+  -- updateLoop ctx . ntimes instructionsPerCycle (execute . decrementTimers) $ cpu
+  updateLoop ctx r . ntimes instructionsPerCycle (execute r) $ cpu
   where
     ntimes :: Int -> (a -> a) -> a -> a
     ntimes 0 f x = x
@@ -71,20 +86,31 @@ main = do
   -- Emulator loading and initialization
   fontBinary <- BS.readFile "fonts/default-font.bin"
   ibmLogoBinary <- BS.readFile "roms/IBM-logo.bin"
-  testOpcodeBinary <- BS.readFile "roms/test-opcode.bin"
-  trip8Binary <- BS.readFile "roms/trip-8-demo.bin"
 
   let rndSeed = mkStdGen 10
-  let font = toArray fontBinary
-  -- let prog = toArray ibmLogoBinary
-  -- let prog = toArray testOpcodeBinary
-  let prog = toArray trip8Binary
-  let chip8 = loadProgram prog $ loadFont font $ seed rndSeed
+  let fontVector = fromByteString fontBinary
+  let progVector = fromByteString ibmLogoBinary
+  let ram = replicate 4096 0
+  let withFont = fontVector `copyTo` (0,ram)
+  let withProgram = progVector `copyTo` (512,withFont)
+
+  let chip8 = C8Classic {
+    indexPointer = 0,
+    programCounter = 0x200,
+    memory = withProgram,
+    stackPointer = 0,
+    stackFrames = replicate 16 0,
+    registers = replicate 16 0,
+    delayTimer = 0,
+    soundTimer = 0,
+    inputBuffer = replicate 16 False,
+    displayBuffer = replicate (64 * 32) False
+  }
 
   -- Renderer loading and initialization
   let windowScaleFactor = 20
-  let displayWidth = width (display chip8) * windowScaleFactor
-  let displayHeight = height (display chip8) * windowScaleFactor
+  let displayWidth = 64 * windowScaleFactor
+  let displayHeight = 32 * windowScaleFactor
   let viewportSize = Size (fromIntegral displayWidth) (fromIntegral displayHeight)
   let viewportPosition = Position 0 0
   let windowWidth = fromIntegral displayWidth
@@ -136,4 +162,4 @@ main = do
     displayTextures = textures 
   }
 
-  updateLoop ctx chip8
+  updateLoop ctx chip8Record chip8

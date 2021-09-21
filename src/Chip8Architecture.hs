@@ -89,7 +89,7 @@ class Chip8Architecture c where
     (0x9, _, _, _) -> if vx /= vy then skipPC c8 else stepPC c8
 
     -- step pc. v(x) = nn
-    (0x6, _, _, _) ->  stepPC . setV v' $ c8
+    (0x6, _, _, _) -> stepPC . setV v' $ c8
       where 
         v' = v c8 // [(x,nn)]
 

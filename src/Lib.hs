@@ -83,6 +83,9 @@ toArray bs = array (0,maxIndex) (fmap toAssoc [0..(length-1)])
     maxIndex = fromIntegral (length - 1)
     toAssoc i = (fromIntegral i, BS.index bs i)
 
+shiftBy :: Integral i => i -> (i,i) -> (i,i)
+shiftBy o (i,j) = (i + o,j)
+
 wrap :: 
   (Integral a, Integral b) => 
   (a,b) -> 

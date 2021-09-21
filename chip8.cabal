@@ -33,6 +33,7 @@ library
       Lib
       Rendering
       UnsafeStack
+      VectorUtils
   other-modules:
       Paths_chip8
   hs-source-dirs:
