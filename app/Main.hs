@@ -1,4 +1,5 @@
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE GADTs #-}
 
 module Main where
 
@@ -21,7 +22,7 @@ import VectorUtils (indexPairs, fromByteString, copyTo)
 import Rendering
 import UnsafeStack
 import Array2D
-import Lib hiding (copyTo)
+import Lib hiding (copyTo, (×))
 
 onError :: GLFW.ErrorCallback
 onError e s = putStrLn $ unwords [show e, show s]
@@ -81,8 +82,78 @@ updateLoop ctx r cpu = do
     ntimes 0 f x = x
     ntimes n f x = ntimes (n - 1) f (f x)
 
+{-
+THIS IS SOME SILLY SHIT BECAUSE I AM TIRED.
+-}
+
+data Test = Test { p :: Int, q:: [Int] } deriving Show
+pluck t = (head t, tail t)
+setp p t = t { p = p }
+setq q t = t { q = q }
+infixl 6 △
+(f △ g) x = (f x, g x)
+infix 6 ×
+(f × g) (x,y) = (f x,g y)
+compose (g,f) x = g (f x)
+apply (f,x) = f x
+returnFrom c8 = c8 { p = p', q = q' } where (p',q') = pluck (q c8)
+returnFrom' c8 = setp p' . setq q' $ c8 where (p',q') = pluck (q c8)
+returnFrom'' = apply . ((compose . (setp × setq) . pluck . q) △ id)
+returnFrom''' :: ((a,[a]),b) -> ((a,[a]),b)
+returnFrom''' = (pluck . snd) × id
+
+
+-- encode natural numbers in types
+-- need a type constructor that holds a single value
+newtype Suc a = Suc a deriving Show
+data Z = Z deriving Show
+
+data Stak n a where
+  Empty :: Stak Z a
+  Push  :: Stak n a -> a -> Stak (Suc n) a
+
+instance (Show n, Show a) => Show (Stak n a) where
+  show Empty      = "[]"
+  show (Push l r) = show r
+
+class Cons h where
+  mkCons :: a -> c a -> h a (c a)
+  car :: h a (c a) -> a
+  cdr :: h a (c a) -> c a
+
+class Stakkish p where
+  begin :: p Z a
+  shove :: p n a -> a -> p (Suc n) a
+  popple :: Cons c => p (Suc n) a -> c a (p n a)
+
+instance Cons (,) where
+  mkCons = (,)
+  car = fst
+  cdr = snd
+
+instance Stakkish Stak where
+  shove = Push
+  begin = Empty
+  popple (Push Empty a) = mkCons a Empty
+  popple (Push (Push n a) b) = mkCons b (Push n a)
+
 main :: IO ()
 main = do
+  -- TODO: DELETE ME
+  let tst = Test { p = 0, q = [1,2,3] }
+
+  print $ returnFrom tst
+  print $ returnFrom' tst
+  print $ returnFrom'' tst
+  print $ returnFrom''' ((0, [1,2,3]),"cats")
+
+  let s = Empty `Push` 5 `Push` 6 `Push` 7
+  let valid :: (Int, Stak (Suc (Suc Z)) Int) = popple s
+  let alsovalid :: (Int, Stak Z Int) = popple (begin `shove` 5)
+
+  print s
+  -- END TESTS
+
   -- Emulator loading and initialization
   fontBinary <- BS.readFile "fonts/default-font.bin"
   ibmLogoBinary <- BS.readFile "roms/IBM-logo.bin"
