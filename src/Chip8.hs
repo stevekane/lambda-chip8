@@ -2,84 +2,75 @@ module Chip8 where
 
 import Data.Bits (shiftL, shiftR, (.&.), (.|.), xor)
 import Data.Word (Word8, Word16, Word32)
-import Data.Array (Array, array, assocs, (!), (//))
-import System.Random (StdGen, mkStdGen, genWord8)
-import Lib
-import Array2D
-import UnsafeStack
-import Chip8Architecture (Chip8Architecture(..))
+import Data.Vector (Vector, (!), (//), replicate)
+import Prelude hiding (replicate)
+import Control.Lens (Lens', set, over, view, (^.))
+import Lib ((×), nthbit, highNibble, lowNibble, word8FromNibbles, word16FromNibbles)
 
-data Chip8 s d = Chip8 {
-  randomSeed :: StdGen,
-  display    :: d,
-  inputs     :: Array Word8 Bool,
-  stack      :: s,
-  v          :: Array Word8 Word8,
-  d          :: Word8,
-  s          :: Word8,
-  pc         :: Word16,
-  i          :: Word16,
-  ram        :: Array Word16 Word8
-} deriving Show
+type Stack = []
 
-type Inputs = Array Word8 Bool
-type Registers = Array Word8 Word8
-type RAM = Array Word16 Word8
-data C8Min s d 
-  = C8Min StdGen d Inputs s Registers Word8 Word8 Word16 Word16 RAM
-  deriving Show
+push        = (:)
+pop (a : s) = (a,s)
+pop []      = error "Pop empty not supported"
 
-data Display i e = Display {
-  w      :: i,
-  h      :: i,
-  pixels :: Array i e
-} deriving Show
+class Chip8 c where
+  i         :: Lens' c Word16
+  pc        :: Lens' c Word16
+  stack     :: Lens' c (Stack Word16)
+  registers :: Lens' c (Vector Word8)
+  ram       :: Lens' c (Vector Word8)
+  display   :: Lens' c (Vector Bool)
 
-instance Array2D Display where
-  width            = w
-  height           = h
-  at v (x,y)       = pixels v ! (w v * y + x)
-  update v pixels' = v { pixels = pixels v // fmap toFlatIndex pixels' }
-    where
-      toFlatIndex (x,y,e) = (w v * y + x,e)
-
-instance UnsafeStack [] where
-  push       = (:)  
-  pop []     = error "Unsafe pop failure"
-  pop (x:xs) = (x,xs)
-
-instance Chip8Architecture Chip8 where
-  randomSeed = Chip8.randomSeed
-  setRandomSeed seed c8 = c8 { Chip8.randomSeed = seed }
-  inputs = Chip8.inputs
-  setInputs inputs c8 = c8 { Chip8.inputs = inputs }
-  display = Chip8.display
-  setDisplay display c8 = c8 { Chip8.display = display }
-  stack = Chip8.stack
-  setStack stack c8 = c8 { Chip8.stack = stack }
-  v = Chip8.v
-  setV v c8 = c8 { Chip8.v = v }
-  d = Chip8.d
-  setD d c8 = c8 { Chip8.d = d }
-  s = Chip8.s
-  setS s c8 = c8 { Chip8.s = s }
-  pc = Chip8.pc
-  setPC pc c8 = c8 { Chip8.pc = pc }
-  i = Chip8.i
-  setI i c8 = c8 { Chip8.i = i }
-  ram = Chip8.ram
-  setRAM ram c8 = c8 { Chip8.ram = ram }
-
-seed :: StdGen -> Chip8 [Word16] (Display Word32 Bool)
-seed randomSeed = Chip8 {
-  Chip8.randomSeed = randomSeed,
-  Chip8.display = Display { w = 64, h = 32, pixels = initialize (0,64 * 32 - 1) False },
-  Chip8.inputs = initialize (0,0xF) False,
-  Chip8.v = initialize (0,0xF) 0, 
-  Chip8.stack = [],
-  Chip8.ram = initialize (0,0xFFF) 0,
-  Chip8.pc = 0x200,
-  Chip8.d = 0,
-  Chip8.s = 0,
-  Chip8.i = 0
-}
+  execute :: c -> c  
+  execute c = ops c
+    where 
+      i0  = view ram c ! fromIntegral (view pc c)
+      i1  = view ram c ! (fromIntegral (view pc c) + 1)
+      a   = highNibble i0
+      x   = lowNibble i0
+      y   = highNibble i1
+      z   = lowNibble i1
+      vx  = view registers c ! fromIntegral x
+      vy  = view registers c ! fromIntegral y
+      nn  = word8FromNibbles y z
+      nnn = word16FromNibbles x y z
+      stepPC c = over pc (+2) c
+      skipPC c = over pc (+4) c
+      clearDisplay c = set display blankDisplay c
+        where
+          pixelCount   = length (view display c)
+          blankDisplay = replicate pixelCount False
+      storePCToStack c = over stack (push pc') c
+        where
+          pc' = view pc c + 2
+      setPCFromStack c = set stack stack' . set pc pc' $ c
+        where
+          (pc',stack') = pop (view stack c)
+      setRegister i v c = set registers registers' c
+        where
+          registers' = view registers c // [(fromIntegral i, v)]
+      ops = case (a,x,y,z) of
+        (0x0, 0x0, 0xE, 0x0) -> stepPC . clearDisplay
+        (0x0, 0x0, 0xE, 0xE) -> setPCFromStack
+        (0x1,   _,   _,   _) -> set pc nnn
+        (0x2,   _,   _,   _) -> set pc nnn . storePCToStack
+        (0x6,   _,   _,   _) -> stepPC . setRegister x nn
+        (0x7,   _,   _,   _) -> stepPC . setRegister x (nn + vy)
+        (0xA,   _,   _,   _) -> stepPC . set i nnn
+        (0xD,   _,   _,   _) -> stepPC . over display setDisplay
+          where
+            (x0,y0)          = (fromIntegral vx,fromIntegral vy)
+            (w,h)            = (8,fromIntegral z)
+            offsets          = [0..(w-1)] × [0..(h-1)]
+            ramOffset        = fromIntegral (view i c)
+            displayPixels    = view display c
+            memory           = view ram c
+            setDisplay d     = d // fmap writePixel offsets
+            writePixel (i,j) = (index,pixel)
+              where
+                (x,y)        = (x0 + i, y0 + j)
+                index        = fromIntegral (y * 64 + x)
+                displayPixel = displayPixels ! index
+                spritePixel  = nthbit (7 - i) (memory ! (ramOffset + j))
+                pixel        = displayPixel `xor` spritePixel
+        _                    -> error (show (a,x,y,z))

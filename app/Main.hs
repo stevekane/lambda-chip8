@@ -1,26 +1,30 @@
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE RankNTypes #-}
 
 module Main where
 
 import Prelude hiding (replicate)
 
-import Data.Word (Word8, Word16, Word32)
-import Data.Vector (replicate, fromList, (//), (!))
 import System.Random (mkStdGen)
-import Control.Lens (view)
+
+import Control.Lens (Lens', set, over, view, (^.))
+
+import Data.Word (Word8, Word16, Word32)
+import Data.Vector (Vector(..), replicate, fromList, (//), (!))
+
 import Graphics.Rendering.OpenGL
 import Graphics.Rendering.OpenGL.GL.Texturing
 
 import qualified Data.ByteString as BS
 import qualified Graphics.UI.GLFW as GLFW
 
-import Chip8Record (Chip8Record(..), C8Classic(..), chip8Record, execute)
+import Chip8 (Chip8(execute, display))
+import Chip8Model (Chip8Model(..))
+import Lib hiding (copyTo, (×))
 import VectorUtils (indexPairs, fromByteString, copyTo)
 import Rendering
-import UnsafeStack
-import Array2D
-import Lib hiding (copyTo, (×))
 
+-- System event handlers
 onError :: GLFW.ErrorCallback
 onError e s = putStrLn $ unwords [show e, show s]
 
@@ -39,20 +43,14 @@ onKeyPressed w key num state modifiers = print key
 onShutdown :: GLFW.WindowCloseCallback
 onShutdown e = putStrLn "shutdown"
 
-updateLoop :: 
-  RenderContext ->
-  Chip8Record c ->
-  c ->
-  IO()
-updateLoop ctx r cpu = do
+-- Core update loop for the application
+updateLoop :: Chip8 c => RenderContext -> c -> IO()
+updateLoop ctx cpu = do
   let textureWidth = 64
   let textureHeight = 32
-  -- let textureWidth = fromIntegral . width . display $ cpu
-  -- let textureHeight = fromIntegral . height . display $ cpu
   let textureSize = TextureSize2D textureWidth textureHeight
   let textureFormats = (R8, Red, UnsignedByte)
-  -- let textureData = fmap saturateWord8 . rowMajor . display $ cpu
-  let textureData = foldr (\b xs -> saturateWord8 b : xs) [] (view (display r) cpu)
+  let textureData = foldr (\b xs -> saturateWord8 b : xs) [] (view Chip8.display cpu)
   let program = displayProgram ctx
   let uniforms = displayUniforms ctx 
   let textures = displayTextures ctx
@@ -67,8 +65,8 @@ updateLoop ctx r cpu = do
   render program indexCount (vao ctx) uniforms textures 
   GLFW.pollEvents
   GLFW.swapBuffers (window ctx)
-  -- updateLoop ctx . ntimes instructionsPerCycle (execute . decrementTimers) $ cpu
-  updateLoop ctx r . ntimes instructionsPerCycle (execute r) $ cpu
+  updateLoop ctx (ntimes instructionsPerCycle execute cpu)
+
 
 main :: IO ()
 main = do
@@ -83,17 +81,13 @@ main = do
   let withFont = fontVector `copyTo` (0,ram)
   let withProgram = progVector `copyTo` (512,withFont)
 
-  let chip8 = C8Classic {
-    indexPointer = 0,
-    programCounter = 0x200,
-    memory = withProgram,
-    stackPointer = 0,
-    stackFrames = replicate 16 0,
-    registers = replicate 16 0,
-    delayTimer = 0,
-    soundTimer = 0,
-    inputBuffer = replicate 16 False,
-    displayBuffer = replicate (64 * 32) False
+  let chip8 = Chip8Model {
+    Chip8Model.i = 0,
+    Chip8Model.pc = 0x200,
+    Chip8Model.ram = withProgram,
+    Chip8Model.stack = [],
+    Chip8Model.registers = replicate 16 0,
+    Chip8Model.display = replicate (64 * 32) False
   }
 
   -- Renderer loading and initialization
@@ -151,4 +145,4 @@ main = do
     displayTextures = textures 
   }
 
-  updateLoop ctx chip8Record chip8
+  updateLoop ctx chip8
