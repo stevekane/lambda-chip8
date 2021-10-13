@@ -37,16 +37,16 @@ Chip8
   skip_pc : Π(c:Chip8, c':Chip8) 
     pc c' ≡ pc c + 4
 
-  display_cleared : Π(c:Chip8, p:Fin_64 × Fin_32)
-    peek p c ≡ 0
+  display_cleared : Π(c:Chip8, p:Fin_64 × Fin_32) 
+    peek p (display c) ≡ 0
 
   sprite_rendered : Π(c:Chip8, c':Chip8, x:W_6, y:W_32, n:W_8) 
     Π(b:Fin_(8*n))
       let 
         x_n ≜ b%8
         y_n ≜ b/8
-          p ≜ x+x_n × y+y_n
-          o ≜ (i c)+y_n
+        p   ≜ x+x_n × y+y_n
+        o   ≜ (i c)+y_n
       in  
         display p c' ≡ display p c ⊕ memory c o j
 
@@ -57,28 +57,24 @@ Chip8
       in
         f a ≡ f b
 
-  pc_from_stack_pop : Π(c:Chip8, c':Chip8)
-    let 
-      <v,stack'> ≜ pop (stack c)
-    in
-      × stack c' ≡ stack'
-      × pc c' ≡ v
+  step : Chip8 → Chip8
 
-  step: Π(c:Chip8) 
-    Σ(c':Chip8)
+  step_laws: 
+    Π(c:Chip8)
       let 
         <a,x,y,z> ≜ π_1 (nibbles c)
-             same ≜ unchanged Chip8 c c'
+        same      ≜ unchanged Chip8 c c'
+        c8'       ≜ step c8
       in 
         -- 00E0 clear display
         + × <0,E,0> ≡ <a,y,z>
           × step_pc c c'
-          × display_cleared c'
+          × display_cleared c8'
           × same 7 <i,st,dt,stack,registers,memory,inputs>
 
         -- 00EE return from subroutine
         + × <0,E,E> ≡ <a,y,z>
-          × pc_from_stack_pop c c'
+          × <pc c',stack c'> ≡ pop (stack c)
           × same 6 <i,st,dt,registers,memory,inputs>
           
         -- 1NNN jump to nnn
@@ -163,6 +159,12 @@ Chip8
           × registers c' x ≡ registers c x - registers c y 
           × same 7 <i,st,dt,stack,memory,display,inputs>
 
+        -- 8XY6 vx = vx >> 1. vf = lsb
+        + × <8,6> ≡ <a,z>
+          × step_pc c c'
+          × registers c' x ≡ registers c x - registers c y 
+          × same 7 <i,st,dt,stack,memory,display,inputs>
+          
         -- ANNN i = nnn
         + × A ≡ a
           × step_pc c c'

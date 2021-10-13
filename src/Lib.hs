@@ -115,3 +115,7 @@ showColumns c p a = foldr render "" (assocs a)
     prefix i = if i `mod` c == 0 then "\n" else ""
     spacer i = if i `mod` p == 0 then "\t\t" else "\t"
     render (i,y) x = prefix i ++ show y ++ spacer (i + 1) ++ x
+
+ntimes :: Int -> (a -> a) -> a -> a
+ntimes 0 f x = x
+ntimes n f x = ntimes (n - 1) f (f x)
