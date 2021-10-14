@@ -1,28 +1,22 @@
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE RankNTypes #-}
 
 module Main where
 
 import Prelude hiding (replicate)
-
 import System.Random (mkStdGen)
-
 import Control.Lens (view)
-
 import Data.Word (Word8, Word16, Word32)
 import Data.Vector (Vector(..), replicate, fromList, (//), (!))
-
 import Graphics.Rendering.OpenGL
 import Graphics.Rendering.OpenGL.GL.Texturing
-
-import qualified Data.ByteString as BS
-import qualified Graphics.UI.GLFW as GLFW
-
 import Chip8 (Chip8(execute, display))
 import Chip8Model (Chip8Model(..), mkChip8)
 import Lib (saturateWord8, ntimes)
 import VectorUtils (fromByteString)
 import Rendering
+
+import qualified Data.ByteString as BS
+import qualified Graphics.UI.GLFW as GLFW
 
 -- System event handlers
 onError :: GLFW.ErrorCallback
