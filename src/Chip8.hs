@@ -44,13 +44,13 @@ class Chip8 c where
       nnn                                  = word16FromNibbles x y z
       stepPC                               = over pc (+2)
       skipPC                               = over pc (+4)
-      clearDisplay                         = set display (replicate (64*32) False)
       storePCToStack pc'                   = over stack (push pc')
       setPCFromStack (pc',stack')          = set stack stack' . set pc pc'
       setAll t vs                          = over t (// fmap (first int) vs)
       storeSumAndCarry (x,f) (s,c)         = setAll registers [(int x,s), (f,toWord8 c)]
       storeDifferenceAndBorrow (x,f) (d,b) = setAll registers [(x,d), (f,toWord8 (not b))]
       storeBCDAt (hundreds,tens,ones) i    = setAll ram [(i,hundreds), (i+1,tens), (i+2,ones)]
+      clearDisplay                         = set display (replicate (64*32) False)
       renderSprite x0 y0 height c          = over display setDisplay c
         where
           ramOffset        = int (view i c)
@@ -85,8 +85,8 @@ class Chip8 c where
         (0x8,   _,   _, 0x4) -> stepPC . storeSumAndCarry (x,0xF) (vx `add` vy)
         (0x8,   _,   _, 0x5) -> stepPC . storeDifferenceAndBorrow (x,0xF) (vx `sub` vy)
         (0x8,   _,   _, 0x7) -> stepPC . storeDifferenceAndBorrow (x,0xF) (vy `sub` vx)
-        (0x8,   _,   _, 0x6) -> stepPC . setAll registers [(x,vx `shiftR` 1), (0xF,toWord8 (nthbit 0 vx))]
-        (0x8,   _,   _, 0xE) -> stepPC . setAll registers [(x,vx `shiftL` 1), (0xF,toWord8 (nthbit 7 vx))]
+        (0x8,   _,   _, 0x6) -> stepPC . setAll registers [(x,vx `shiftR` 1), (0xF,lsb vx)]
+        (0x8,   _,   _, 0xE) -> stepPC . setAll registers [(x,vx `shiftL` 1), (0xF,msb vx)]
         -- TODO: Need the random number generator and the one instruction for it!
         -- -- step pc. v(x) = Rand & nn
         -- (0xC, _, _, _) -> stepPC . setV v' . setRandomSeed randomSeed' $ c8

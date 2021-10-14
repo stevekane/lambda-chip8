@@ -13,6 +13,12 @@ saturateWord8 :: Bool -> Word8
 saturateWord8 True = 0xFF
 saturateWord8 False = 0x00
 
+msb :: Word8 -> Word8
+msb = toWord8 . nthbit 0
+
+lsb :: Word8 -> Word8
+lsb = toWord8 . nthbit 7
+
 bcd :: Word8 -> (Word8, Word8, Word8)
 bcd b = (hundreds,tens,ones)
   where
