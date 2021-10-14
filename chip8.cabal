@@ -32,6 +32,7 @@ library
       Chip8Record
       Lib
       Rendering
+      Stack
       UnsafeStack
       VectorUtils
   other-modules:

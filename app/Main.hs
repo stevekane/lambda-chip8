@@ -7,7 +7,7 @@ import Prelude hiding (replicate)
 
 import System.Random (mkStdGen)
 
-import Control.Lens (Lens', set, over, view, (^.))
+import Control.Lens (view)
 
 import Data.Word (Word8, Word16, Word32)
 import Data.Vector (Vector(..), replicate, fromList, (//), (!))
@@ -19,9 +19,9 @@ import qualified Data.ByteString as BS
 import qualified Graphics.UI.GLFW as GLFW
 
 import Chip8 (Chip8(execute, display))
-import Chip8Model (Chip8Model(..))
-import Lib hiding (copyTo, (×))
-import VectorUtils (indexPairs, fromByteString, copyTo)
+import Chip8Model (Chip8Model(..), mkChip8)
+import Lib (saturateWord8, ntimes)
+import VectorUtils (fromByteString)
 import Rendering
 
 -- System event handlers
@@ -72,23 +72,13 @@ main :: IO ()
 main = do
   -- Emulator loading and initialization
   fontBinary <- BS.readFile "fonts/default-font.bin"
-  ibmLogoBinary <- BS.readFile "roms/IBM-logo.bin"
+  progBinary <- BS.readFile "roms/IBM-logo.bin"
 
   let rndSeed = mkStdGen 10
   let fontVector = fromByteString fontBinary
-  let progVector = fromByteString ibmLogoBinary
+  let progVector = fromByteString progBinary
   let ram = replicate 4096 0
-  let withFont = fontVector `copyTo` (0,ram)
-  let withProgram = progVector `copyTo` (512,withFont)
-
-  let chip8 = Chip8Model {
-    Chip8Model.i = 0,
-    Chip8Model.pc = 0x200,
-    Chip8Model.ram = withProgram,
-    Chip8Model.stack = [],
-    Chip8Model.registers = replicate 16 0,
-    Chip8Model.display = replicate (64 * 32) False
-  }
+  let chip8 = mkChip8 (fromByteString fontBinary) (fromByteString progBinary)
 
   -- Renderer loading and initialization
   let windowScaleFactor = 20
