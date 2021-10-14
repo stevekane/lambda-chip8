@@ -72,12 +72,9 @@ main :: IO ()
 main = do
   -- Emulator loading and initialization
   fontBinary <- BS.readFile "fonts/default-font.bin"
-  progBinary <- BS.readFile "roms/IBM-logo.bin"
+  progBinary <- BS.readFile "roms/test-opcode.bin"
 
   let rndSeed = mkStdGen 10
-  let fontVector = fromByteString fontBinary
-  let progVector = fromByteString progBinary
-  let ram = replicate 4096 0
   let chip8 = mkChip8 (fromByteString fontBinary) (fromByteString progBinary)
 
   -- Renderer loading and initialization

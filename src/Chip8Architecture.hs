@@ -121,19 +121,19 @@ class Chip8Architecture c where
     -- step pc. v(x) = v(x) + v(y). v(f) = carry
     (0x8, _, _, 0x4) -> stepPC . setV v' $ c8
       where 
-        (sum,carry) = vx `addWithCarry` vy
+        (sum,carry) = vx `add` vy
         v' = v c8 // [(x,sum), (0xF,toWord8 carry)]
 
     -- step pc. v(x) = v(x) - v(y). v(f) = not borrow
     (0x8, _, _, 0x5) -> stepPC . setV v' $ c8
       where
-        (difference,borrow) = vx `subtractWithBorrow` vy
+        (difference,borrow) = vx `sub` vy
         v' = v c8 // [(x,difference), (0xF,toWord8 . not $ borrow)]
 
     -- step pc. v(x) = v(y) - v(x). v(f) = not borrow
     (0x8, _, _, 0x7) -> stepPC . setV v' $ c8
       where
-        (difference,borrow) = vy `subtractWithBorrow` vx
+        (difference,borrow) = vy `sub` vx
         v' = v c8 // [(x,difference), (0xF,toWord8 . not $ borrow)]
 
     -- step pc. v(x) = v(x) >> 1. v(f) = LSB
@@ -189,7 +189,7 @@ class Chip8Architecture c where
     -- step pc. ram[i] = hundreds(v(x)). ram[i+1] = tens(v(x)). ram[i+2] = ones(v(x))
     (0xF, _, 0x3, 0x3) -> stepPC . setRAM ram' $ c8 
       where
-        (hundreds,tens,ones) = digits vx
+        (hundreds,tens,ones) = bcd vx
         ix = i c8
         ram' = ram c8 // [(ix,hundreds), (ix + 1,tens), (ix + 2, ones)]
 

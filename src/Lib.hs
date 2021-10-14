@@ -13,8 +13,8 @@ saturateWord8 :: Bool -> Word8
 saturateWord8 True = 0xFF
 saturateWord8 False = 0x00
 
-digits :: Word8 -> (Word8, Word8, Word8)
-digits b = (hundreds,tens,ones)
+bcd :: Word8 -> (Word8, Word8, Word8)
+bcd b = (hundreds,tens,ones)
   where
     ones = b `mod` 10
     tens = b `div` 10 `mod` 10
@@ -38,6 +38,9 @@ word16 = fromIntegral
 word32 :: Integral a => a -> Word32
 word32 = fromIntegral
 
+int :: Integral a => a -> Int
+int = fromIntegral
+
 word8FromNibbles :: Word8 -> Word8 -> Word8
 word8FromNibbles h l = high4 + low4
   where
@@ -51,11 +54,11 @@ word16FromNibbles h m l = high4 + mid4 + low4
     mid4 = word16 m `shiftL` 4
     low4 = word16 l
 
-addWithCarry :: Word8 -> Word8 -> (Word8, Bool)
-addWithCarry a b = (a + b, (word16 a + word16 b) > 255)
+add :: Word8 -> Word8 -> (Word8, Bool)
+add a b = (a + b, (word16 a + word16 b) > 255)
 
-subtractWithBorrow :: Word8 -> Word8 -> (Word8, Bool)
-subtractWithBorrow a b = (a - b,a < b)
+sub :: Word8 -> Word8 -> (Word8, Bool)
+sub a b = (a - b,a < b)
 
 initialize :: (Integral i, Ix i) => (i,i) -> e -> Array i e
 initialize (min,max) v0 = array (min,max) (fmap initialPair [min..max])
@@ -63,15 +66,6 @@ initialize (min,max) v0 = array (min,max) (fmap initialPair [min..max])
 
 (×) :: Integral a => [a] -> [a] -> [(a,a)]
 l × r = [ (x,y) | y <- r, x <- l ]
-
-copyTo :: 
-  (Ix a, Ix b, Integral a, Integral b) => 
-  (Array a e, a) -> 
-  (Array b e, b) -> 
-  a -> 
-  Array a e
-copyTo (to,t0) (from,f0) n = to // fmap updatePair [0..n]
-  where updatePair i = (t0 + fromIntegral i,from ! (f0 + fromIntegral i))
 
 toArray :: 
   (Ix i, Num i) => 
@@ -83,6 +77,15 @@ toArray bs = array (0,maxIndex) (fmap toAssoc [0..(length-1)])
     maxIndex = fromIntegral (length - 1)
     toAssoc i = (fromIntegral i, BS.index bs i)
 
+copyTo :: 
+  (Ix a, Ix b, Integral a, Integral b) => 
+  (Array a e, a) -> 
+  (Array b e, b) -> 
+  a -> 
+  Array a e
+copyTo (to,t0) (from,f0) n = to // fmap updatePair [0..n]
+  where updatePair i = (t0 + fromIntegral i,from ! (f0 + fromIntegral i))
+
 shiftBy :: Integral i => i -> (i,i) -> (i,i)
 shiftBy o (i,j) = (i + o,j)
 
@@ -92,6 +95,8 @@ wrap ::
   (a,b) -> 
   (a,b)
 wrap (w,h) (x,y) = (mod x w,mod y h)
+
+
 
 bound :: 
   (Integral a, Integral b) => 
