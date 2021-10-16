@@ -160,8 +160,8 @@ run instruction c = action c
       I_8XY4 { x, y }    -> stepPC . addWithCarry x (v x c `add` v y c)
       I_8XY5 { x, y }    -> stepPC . subWithBorrow x (v x c `sub` v y c)
       I_8XY7 { x, y }    -> stepPC . subWithBorrow x (v y c `sub` v x c)
-      I_8XY6 { x, y }    -> stepPC . shiftWithShifted x (v x c `shiftR` 1,lsb (v x c))
-      I_8XYE { x, y }    -> stepPC . shiftWithShifted x (v x c `shiftL` 1,msb (v x c))
+      I_8XY6 { x, y }    -> stepPC . shiftWithShifted x (rshift (v x c))
+      I_8XYE { x, y }    -> stepPC . shiftWithShifted x (lshift (v x c))
       I_CXNN { x, nn }   -> stepPC . storeRandomValue x nn (genWord8 (view rand c))
       I_00E0             -> stepPC . set display blankDisplay
       I_DXYN { x, y, n } -> stepPC . renderSprite (v x c) (v y c) (int n)
@@ -213,8 +213,8 @@ subWithBorrow :: (Chip8 c, Integral i) => i -> (Word8,Bool) -> c -> c
 subWithBorrow x (d,b) = setV x d . setV 0xF (toWord8 (not b))
 
 -- | store result of bit-shifting in v(x). store shifted bit in v(F)
-shiftWithShifted :: (Chip8 c, Integral i) => i -> (Word8,Word8) -> c -> c
-shiftWithShifted x (r,b) = setV x r . setV 0xF b
+shiftWithShifted :: (Chip8 c, Integral i) => i -> (Word8,Bool) -> c -> c
+shiftWithShifted x (r,b) = setV x r . setV 0xF (toWord8 b)
 
 -- | store result of generating random value in v(x). store new seed in rand
 storeRandomValue :: (Chip8 c, Integral i) => i -> Word8 -> (Word8,StdGen) -> c -> c

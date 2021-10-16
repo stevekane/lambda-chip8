@@ -17,14 +17,6 @@ saturateWord8 :: Bool -> Word8
 saturateWord8 True = 0xFF
 saturateWord8 False = 0x00
 
--- | most significant bit from a byte
-msb :: Word8 -> Word8
-msb = toWord8 . nthbit 0
-
--- | least significant bit from a byte
-lsb :: Word8 -> Word8
-lsb = toWord8 . nthbit 7
-
 -- | binary coded decimal representation of a byte
 bcd :: Word8 -> (Word8, Word8, Word8)
 bcd b = (hundreds,tens,ones)
@@ -83,6 +75,14 @@ add a b = (a + b, (word16 a + word16 b) > 255)
 -- | bitwise subtraction with borrow bit
 sub :: Word8 -> Word8 -> (Word8, Bool)
 sub a b = (a - b,a < b)
+
+-- | left shift a byte returning the new byte and shifted out bit
+lshift :: Word8 -> (Word8, Bool)
+lshift w = (w `shiftL` 1,nthbit 7 w)
+
+-- | right shift a byte returning the new byte and shifted out bit
+rshift :: Word8 -> (Word8, Bool)
+rshift w = (w `shiftR` 1,nthbit 0 w)
 
 -- | cartesian product of two lists
 (×) :: Integral a => [a] -> [a] -> [(a,a)]
