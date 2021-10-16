@@ -64,9 +64,7 @@ data Instruction
   | I_FX65 { x :: Word8 }
   | I_NOOP { msg :: String }
 
--- | class of data structures satisfying Chip8 Specification
---   concrete types implement this class to become satisfactory models
---   of Chip8. 
+-- | Chip8 Specification
 class Chip8 c where
   rand      :: Lens' c StdGen
   i         :: Lens' c Word16
@@ -190,7 +188,7 @@ skipPC = over pc (+wordsPerInstruction*2)
 
 -- | fetch the value from a register by index
 v :: (Chip8 c, Integral i, Integral o) => i -> c -> o
-v i c = fromIntegral (view registers c ! fromIntegral i)
+v i c = fromIntegral (view registers c ! int i)
 
 -- | set the valud in a register by index
 setV :: (Chip8 c, Integral i) => i ->  Word8 -> c -> c
@@ -229,18 +227,18 @@ dumpRegistersToMemory :: (Chip8 c, Integral i) => i -> c -> c
 dumpRegistersToMemory x c = set ram (copyTo (mem,memOffset) (regs,0) length) c
   where 
     mem       = view ram c
-    memOffset = fromIntegral (view i c)
+    memOffset = int (view i c)
     regs      = view registers c
-    length    = fromIntegral x
+    length    = int x
 
 -- | store values in ram(i..i+x) in registers v(0..x)
 loadRegistersFromMemory :: (Chip8 c, Integral i) => i -> c -> c
 loadRegistersFromMemory x c = set registers (copyTo (regs,0) (mem,memOffset) length) c
   where 
     mem       = view ram c
-    memOffset = fromIntegral (view i c)
+    memOffset = int (view i c)
     regs      = view registers c
-    length    = fromIntegral x
+    length    = int x
 
 -- | render a sprite beginning at <x,y> with height 
 renderSprite :: Chip8 c => Int -> Int -> Int -> c -> c
