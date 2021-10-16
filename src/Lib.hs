@@ -83,15 +83,6 @@ toArray bs = array (0,maxIndex) (fmap toAssoc [0..(length-1)])
     maxIndex = fromIntegral (length - 1)
     toAssoc i = (fromIntegral i, BS.index bs i)
 
-copyTo :: 
-  (Ix a, Ix b, Integral a, Integral b) => 
-  (Array a e, a) -> 
-  (Array b e, b) -> 
-  a -> 
-  Array a e
-copyTo (to,t0) (from,f0) n = to // fmap updatePair [0..n]
-  where updatePair i = (t0 + fromIntegral i,from ! (f0 + fromIntegral i))
-
 shiftBy :: Integral i => i -> (i,i) -> (i,i)
 shiftBy o (i,j) = (i + o,j)
 
@@ -101,8 +92,6 @@ wrap ::
   (a,b) -> 
   (a,b)
 wrap (w,h) (x,y) = (mod x w,mod y h)
-
-
 
 bound :: 
   (Integral a, Integral b) => 

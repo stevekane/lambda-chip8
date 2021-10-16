@@ -67,9 +67,9 @@ main = do
   -- Emulator loading and initialization
   fontBinary <- BS.readFile "fonts/default-font.bin"
   progBinary <- BS.readFile "roms/test-opcode.bin"
+  -- progBinary <- BS.readFile "roms/IBM-logo.bin"
 
-  let rndSeed = mkStdGen 10
-  let chip8 = mkChip8 (fromByteString fontBinary) (fromByteString progBinary)
+  let chip8 = mkChip8 (fromByteString fontBinary) (fromByteString progBinary) (mkStdGen 10)
 
   -- Renderer loading and initialization
   let windowScaleFactor = 20
