@@ -25,16 +25,11 @@ source-repository head
 
 library
   exposed-modules:
-      Array2D
       Chip8
-      Chip8Architecture
       Chip8Model
-      Chip8Record
       Lib
       Rendering
       Stack
-      UnsafeStack
-      VectorUtils
   other-modules:
       Paths_chip8
   hs-source-dirs:

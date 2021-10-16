@@ -10,6 +10,7 @@ import System.Random (StdGen)
 import Stack (Stack)
 import Chip8 (Chip8(..))
 
+-- | concrete data structure that implements Chip8
 data Chip8Model = Chip8Model {
   rand      :: StdGen,
   i         :: Word16,
@@ -23,6 +24,7 @@ data Chip8Model = Chip8Model {
   inputs    :: Vector Bool
 }
 
+-- | constructor with parameters and default values
 mkChip8 :: Vector Word8 -> Vector Word8 -> StdGen -> Chip8Model
 mkChip8 font prog rand = load font prog rand Chip8Model {
   Chip8Model.rand      = rand,
@@ -37,7 +39,7 @@ mkChip8 font prog rand = load font prog rand Chip8Model {
   Chip8Model.inputs    = replicate 16 False
 }
 
--- lenses could be generated via template haskell
+-- | lenses could be generated via template haskell
 instance Chip8 Chip8Model where
   rand      = lens Chip8Model.rand (\c8 rand -> c8 { Chip8Model.rand = rand })
   i         = lens Chip8Model.i (\c8 i -> c8 { Chip8Model.i = i })

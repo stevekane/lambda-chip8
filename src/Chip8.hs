@@ -1,6 +1,8 @@
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
+-- | Primary Source: https://en.wikipedia.org/wiki/CHIP-8 
+
 module Chip8 (Chip8(..)) where
 
 import Prelude hiding (replicate)
@@ -10,7 +12,6 @@ import Data.Vector (Vector, (!), (//), replicate)
 import Data.Bifunctor (first)
 import Control.Lens (Lens', ASetter, set, over, view)
 import Stack (Stack, push, pop)
-import VectorUtils (copyTo)
 import Lib
 import System.Random (StdGen, genWord8)
 
@@ -22,8 +23,10 @@ fontHeight :: Int             = 5
 programAddress :: Int         = 512
 blankDisplay :: Vector Bool   = replicate (displayWidth*displayHeight) False
 
+-- | Four word8s representing word4s
 type Nibbles = (Word8, Word8, Word8, Word8)
 
+-- | Instructions with decoded parameters
 data Instruction
   = I_00E0
   | I_00EE
@@ -61,6 +64,9 @@ data Instruction
   | I_FX65 { x :: Word8 }
   | I_NOOP { msg :: String }
 
+-- | class of data structures satisfying Chip8 Specification
+--   concrete types implement this class to become satisfactory models
+--   of Chip8. 
 class Chip8 c where
   rand      :: Lens' c StdGen
   i         :: Lens' c Word16
@@ -73,6 +79,7 @@ class Chip8 c where
   display   :: Lens' c (Vector Bool)
   inputs    :: Lens' c (Vector Bool)
 
+  -- | load a font, program, and random seed
   load :: Vector Word8 -> Vector Word8 -> StdGen -> c -> c
   load font prog stdgen c = set ram withProg . set rand stdgen $ c
     where
@@ -80,18 +87,21 @@ class Chip8 c where
       withFont = copyTo (empty,fontAddress) (font,0) (length font)
       withProg = copyTo (withFont,programAddress) (prog,0) (length prog)
 
+  -- | fetch instruction at pc, decode it, and run it
   execute :: c -> c  
   execute c = run instruction c
     where
-      nibbles = fetch c
+      nibbles     = fetch c
       instruction = decode nibbles
 
+-- | fetch two bytes from memory at pc and pc+1 and return as word4s
 fetch :: Chip8 c => c -> Nibbles
 fetch c = (highNibble i0, lowNibble i0, highNibble i1, lowNibble i1)
   where
     i0 = view ram c ! int (view pc c)
     i1 = view ram c ! (int (view pc c) + 1)
 
+-- | decode nibbles into instructions with extracted parameters
 decode :: Nibbles -> Instruction
 decode (0x0, 0x0, 0xE, 0x0) = I_00E0
 decode (0x0, 0x0, 0xE, 0xE) = I_00EE
@@ -129,6 +139,7 @@ decode (0xF,   x, 0x5, 0x5) = I_FX55 { x = x }
 decode (0xF,   x, 0x6, 0x5) = I_FX65 { x = x }
 decode nibbles              = I_NOOP { msg = show nibbles }
 
+-- | run an instruction yielding a new Chip8
 run :: Chip8 c => Instruction -> c -> c
 run instruction c = action c
   where
@@ -155,6 +166,7 @@ run instruction c = action c
       I_00E0             -> stepPC . set display blankDisplay
       I_DXYN { x, y, n } -> stepPC . renderSprite (v x c) (v y c) (int n)
       I_ANNN { nnn }     -> stepPC . set i nnn
+      I_BNNN { nnn }     -> stepPC . set pc (nnn + v 0x0 c)
       I_FX1E { x }       -> stepPC . over i (+ word16 (v x c))
       I_FX29 { x }       -> stepPC . set i (word16 (v x c * fontHeight))
       I_FX33 { x }       -> stepPC . storeBCDAt (bcd (v x c)) (view i c)
@@ -167,41 +179,52 @@ run instruction c = action c
       I_EXA1 { x }       -> if view inputs c ! int (v x c) then stepPC else skipPC
       I_FX0A { x }       -> if view inputs c ! int (v x c) then skipPC else id
       I_NOOP { msg }     -> id
-      _ -> id -- TODO: REMOVE AFTER FINISHING INSTRUCTIONS
 
+-- | increment the program counter by two bytes
 stepPC :: Chip8 c => c -> c
 stepPC = over pc (+wordsPerInstruction)
 
+-- | increment the program counter by four bytes
 skipPC :: Chip8 c => c -> c
 skipPC = over pc (+wordsPerInstruction*2)
 
+-- | fetch the value from a register by index
 v :: (Chip8 c, Integral i, Integral o) => i -> c -> o
 v i c = fromIntegral (view registers c ! fromIntegral i)
 
+-- | set the valud in a register by index
 setV :: (Chip8 c, Integral i) => i ->  Word8 -> c -> c
 setV x value = setAll registers [(x,value)]
 
+-- | set multiple values in a vector-valued lens
 setAll :: Integral i => ASetter s t (Vector a) (Vector a) -> [(i, a)] -> s -> t
 setAll t vs = over t (// fmap (first int) vs)
 
+-- | return from subroutine by setting the program counter to the popped value
 returnFromSubroutine :: Chip8 c => (Word16,Stack Word16) -> c -> c
 returnFromSubroutine (pc', stack') = set pc pc' . set stack stack'
 
+-- | store result of bitwise addition in v(x) and carry in v(F)
 addWithCarry :: (Chip8 c, Integral i) => i -> (Word8,Bool) -> c -> c
 addWithCarry x (s,c) = setV x s . setV 0xF (toWord8 c)
 
+-- | store result of bitwise subtraction in v(x) and !borrow in v(F)
 subWithBorrow :: (Chip8 c, Integral i) => i -> (Word8,Bool) -> c -> c
 subWithBorrow x (d,b) = setV x d . setV 0xF (toWord8 (not b))
 
+-- | store result of bit-shifting in v(x). store shifted bit in v(F)
 shiftWithShifted :: (Chip8 c, Integral i) => i -> (Word8,Word8) -> c -> c
 shiftWithShifted x (r,b) = setV x r . setV 0xF b
 
+-- | store result of generating random value in v(x). store new seed in rand
 storeRandomValue :: (Chip8 c, Integral i) => i -> Word8 -> (Word8,StdGen) -> c -> c
 storeRandomValue x nn (w,r) = setV x (w .&. nn) . set rand r
 
+-- | store binary-coded decimal representation of a byte in v(i..i+2)
 storeBCDAt :: (Chip8 c, Integral i) => (Word8,Word8,Word8) -> i -> c -> c
 storeBCDAt (h,t,o) i = setAll ram [(i,h), (i+1,t), (i+2,o)]
 
+-- | store values in registers v(0..x) in ram(i..i+x)
 dumpRegistersToMemory :: (Chip8 c, Integral i) => i -> c -> c
 dumpRegistersToMemory x c = set ram (copyTo (mem,memOffset) (regs,0) length) c
   where 
@@ -210,6 +233,7 @@ dumpRegistersToMemory x c = set ram (copyTo (mem,memOffset) (regs,0) length) c
     regs      = view registers c
     length    = fromIntegral x
 
+-- | store values in ram(i..i+x) in registers v(0..x)
 loadRegistersFromMemory :: (Chip8 c, Integral i) => i -> c -> c
 loadRegistersFromMemory x c = set registers (copyTo (regs,0) (mem,memOffset) length) c
   where 
@@ -218,6 +242,7 @@ loadRegistersFromMemory x c = set registers (copyTo (regs,0) (mem,memOffset) len
     regs      = view registers c
     length    = fromIntegral x
 
+-- | render a sprite beginning at <x,y> with height 
 renderSprite :: Chip8 c => Int -> Int -> Int -> c -> c
 renderSprite x0 y0 height c = over display setDisplay c
   where

@@ -1,5 +1,6 @@
 module Stack where
 
+-- | an unsafe an silly stack implementation
 type Stack = []
 
 push        = (:)

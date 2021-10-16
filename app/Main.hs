@@ -9,35 +9,40 @@ import Data.Word (Word8, Word16, Word32)
 import Data.Vector (Vector(..), replicate, fromList, (//), (!))
 import Graphics.Rendering.OpenGL
 import Graphics.Rendering.OpenGL.GL.Texturing
+
 import Chip8 (Chip8(execute, display))
 import Chip8Model (Chip8Model(..), mkChip8)
-import Lib (saturateWord8, ntimes)
-import VectorUtils (fromByteString)
+import Lib (fromByteString, saturateWord8, ntimes)
 import Rendering
 
 import qualified Data.ByteString as BS
 import qualified Graphics.UI.GLFW as GLFW
 
--- System event handlers
+
+-- | event handler for errors
 onError :: GLFW.ErrorCallback
 onError e s = putStrLn $ unwords [show e, show s]
 
+-- | event handler for window refresh
 onRefresh :: GLFW.WindowRefreshCallback
 onRefresh e = putStrLn "refresh"
 
+-- | event handler for change of frame buffer size
 onResize :: GLFW.FramebufferSizeCallback
 onResize e w h = do
   let viewportPosition = Position 0 0
   let viewportSize = Size (fromIntegral w) (fromIntegral h)
   viewport $= (viewportPosition, viewportSize)
 
+-- | event handler for keyboard events
 onKeyPressed :: GLFW.KeyCallback
 onKeyPressed w key num state modifiers = print key
 
+-- | event handler for closing the window
 onShutdown :: GLFW.WindowCloseCallback
 onShutdown e = putStrLn "shutdown"
 
--- Core update loop for the application
+-- | core update loop for the application
 updateLoop :: Chip8 c => RenderContext -> c -> IO()
 updateLoop ctx cpu = do
   let textureWidth = 64
@@ -61,16 +66,9 @@ updateLoop ctx cpu = do
   GLFW.swapBuffers (window ctx)
   updateLoop ctx (ntimes instructionsPerCycle execute cpu)
 
-
+-- | initialization and enters an infinite updateloop
 main :: IO ()
 main = do
-  -- Emulator loading and initialization
-  fontBinary <- BS.readFile "fonts/default-font.bin"
-  progBinary <- BS.readFile "roms/test-opcode.bin"
-  -- progBinary <- BS.readFile "roms/IBM-logo.bin"
-
-  let chip8 = mkChip8 (fromByteString fontBinary) (fromByteString progBinary) (mkStdGen 10)
-
   -- Renderer loading and initialization
   let windowScaleFactor = 20
   let displayWidth = 64 * windowScaleFactor
@@ -125,5 +123,10 @@ main = do
     displayUniforms = uniforms,
     displayTextures = textures 
   }
+
+  -- Emulator loading and initialization
+  fontBinary <- BS.readFile "fonts/default-font.bin"
+  progBinary <- BS.readFile "roms/test-opcode.bin"
+  let chip8 = mkChip8 (fromByteString fontBinary) (fromByteString progBinary) (mkStdGen 10)
 
   updateLoop ctx chip8
