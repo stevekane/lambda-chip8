@@ -6,7 +6,7 @@ import Prelude hiding (replicate)
 import System.Random (mkStdGen)
 import Control.Lens (view)
 import Data.Word (Word8, Word16, Word32)
-import Data.Vector (Vector(..), replicate, fromList, (//), (!))
+import Data.Vector (Vector(..), replicate, toList, fromList, (//), (!))
 import Graphics.Rendering.OpenGL
 import Graphics.Rendering.OpenGL.GL.Texturing
 
@@ -49,7 +49,7 @@ updateLoop ctx cpu = do
   let textureHeight = 32
   let textureSize = TextureSize2D textureWidth textureHeight
   let textureFormats = (R8, Red, UnsignedByte)
-  let textureData = foldr (\b xs -> saturateWord8 b : xs) [] (view Chip8.display cpu)
+  let textureData = fmap saturateWord8 . toList $ view Chip8.display cpu
   let program = displayProgram ctx
   let uniforms = displayUniforms ctx 
   let textures = displayTextures ctx

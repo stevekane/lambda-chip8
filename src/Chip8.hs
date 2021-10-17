@@ -11,10 +11,12 @@ import Data.Word (Word8, Word16, Word32)
 import Data.Vector (Vector, (!), (//), replicate)
 import Data.Bifunctor (first)
 import Control.Lens (Lens', ASetter, set, over, view)
+import System.Random (StdGen, genWord8)
 import Stack (Stack, push, pop)
 import Lib
-import System.Random (StdGen, genWord8)
 
+
+-- | Constants at top of file to imply credibility
 wordsPerInstruction :: Word16 = 2
 displayWidth :: Int           = 64
 displayHeight :: Int          = 32
@@ -160,7 +162,7 @@ run instruction c = action c
       I_8XY7 { x, y }    -> stepPC . subWithBorrow x (v y c `sub` v x c)
       I_8XY6 { x, y }    -> stepPC . shiftWithShifted x (rshift (v x c))
       I_8XYE { x, y }    -> stepPC . shiftWithShifted x (lshift (v x c))
-      I_CXNN { x, nn }   -> stepPC . storeRandomValue x nn (genWord8 (view rand c))
+      I_CXNN { x, nn }   -> stepPC . randWithGenerator x nn (genWord8 (view rand c))
       I_00E0             -> stepPC . set display blankDisplay
       I_DXYN { x, y, n } -> stepPC . renderSprite (v x c) (v y c) (int n)
       I_ANNN { nnn }     -> stepPC . set i nnn
@@ -215,8 +217,8 @@ shiftWithShifted :: (Chip8 c, Integral i) => i -> (Word8,Bool) -> c -> c
 shiftWithShifted x (r,b) = setV x r . setV 0xF (toWord8 b)
 
 -- | store result of generating random value in v(x). store new seed in rand
-storeRandomValue :: (Chip8 c, Integral i) => i -> Word8 -> (Word8,StdGen) -> c -> c
-storeRandomValue x nn (w,r) = setV x (w .&. nn) . set rand r
+randWithGenerator:: (Chip8 c, Integral i) => i -> Word8 -> (Word8,StdGen) -> c -> c
+randWithGenerator x nn (w,r) = setV x (w .&. nn) . set rand r
 
 -- | store binary-coded decimal representation of a byte in v(i..i+2)
 storeBCDAt :: (Chip8 c, Integral i) => (Word8,Word8,Word8) -> i -> c -> c
